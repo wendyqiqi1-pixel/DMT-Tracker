@@ -1,0 +1,1110 @@
+<title>DMT Daily Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an operations console. Slim top bar with identity and role, tab rail, then a working area of panels. Numbers in mono, labels in small caps. */
+:root{
+  --bg:#f3f6f6; --surface:#ffffff; --surface-2:#eaf0f0; --ink:#142328; --muted:#56686f; --line:#d4dfe0;
+  --accent:#0b6b66; --accent-ink:#ffffff; --accent-soft:#d9eeec;
+  --warn:#9a5800; --warn-soft:#fbeed6; --good:#1c7638; --good-soft:#e0f2e4; --bad:#b3261e;
+  --s1:#0f7d77; --s2:#2f5db0; --s3:#c98412; --s4:#7e5fb8; --s5:#b0476f; --s6:#5d7a2a; --s0:#b9c6c8;
+  --display:"Schibsted Grotesk","Segoe UI",system-ui,sans-serif;
+  --body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d1517; --surface:#142023; --surface-2:#1a292d; --ink:#e2ebec; --muted:#93a6ab; --line:#29393d;
+  --accent:#43c2b8; --accent-ink:#062220; --accent-soft:#143633;
+  --warn:#eaae4e; --warn-soft:#3a2c13; --good:#6fd08a; --good-soft:#163222; --bad:#ff8a80;
+  --s1:#43c2b8; --s2:#7ea6f0; --s3:#e8ad4c; --s4:#b59ce8; --s5:#e889ad; --s6:#a6c768; --s0:#3d5054;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d1517; --surface:#142023; --surface-2:#1a292d; --ink:#e2ebec; --muted:#93a6ab; --line:#29393d;
+  --accent:#43c2b8; --accent-ink:#062220; --accent-soft:#143633;
+  --warn:#eaae4e; --warn-soft:#3a2c13; --good:#6fd08a; --good-soft:#163222; --bad:#ff8a80;
+  --s1:#43c2b8; --s2:#7ea6f0; --s3:#e8ad4c; --s4:#b59ce8; --s5:#e889ad; --s6:#a6c768; --s0:#3d5054;
+  color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--body);padding-inline:16px;padding-block:0 48px}
+.app{max-width:1180px;margin:0 auto}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+h2{font-size:18px;font-weight:700}
+h3{font-size:14px;font-weight:700}
+.num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.muted{color:var(--muted)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* top bar */
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding-block:18px 14px}
+.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto}
+.brand h1{font-size:22px;font-weight:800}
+.brand .today{color:var(--muted);font-size:13px}
+.who{display:flex;align-items:center;gap:10px}
+.who img{width:30px;height:30px;border-radius:50%}
+.who .nm{font-weight:600;line-height:1.2}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.good{background:var(--good-soft);color:var(--good)}
+.pill.plain{background:var(--surface-2);color:var(--muted)}
+.viewas{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+select,input[type=text],input[type=date],input[type=number],textarea{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+textarea{width:100%;resize:vertical;min-height:64px}
+.banner{background:var(--warn-soft);color:var(--warn);border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:13px}
+
+/* tabs */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:20px;overflow-x:auto}
+.tab{background:none;border:0;padding:10px 14px;cursor:pointer;color:var(--muted);font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.tab:hover{color:var(--ink)}
+
+/* layout */
+.bar{display:flex;flex-wrap:wrap;align-items:end;gap:12px 16px;margin-bottom:16px}
+.bar .grow{margin-right:auto}
+.field{display:flex;flex-direction:column;gap:4px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}
+.grid2e{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:860px){.grid2,.grid2e{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
+.panel+.panel{margin-top:16px}
+.panel-h{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:12px}
+.stack{display:flex;flex-direction:column;gap:16px}
+
+/* buttons */
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 14px;cursor:pointer;font-weight:600}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.small{padding:4px 10px;font-size:12px}
+.btn.danger{color:var(--bad)}
+.btn:disabled{opacity:.5;cursor:default}
+.chips{display:flex;gap:4px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px;cursor:pointer;font-size:13px;font-weight:500}
+.chip[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+/* counters */
+.ctr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px 18px}
+.ctr{display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px dashed var(--line)}
+.ctr .nm{flex:1;min-width:0;font-size:13px;overflow-wrap:anywhere}
+.ctr.has .nm{font-weight:600}
+.ctr button{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);background:var(--surface-2);cursor:pointer;font-size:16px;line-height:1;flex:none}
+.ctr button:hover{border-color:var(--accent);color:var(--accent)}
+.ctr input{width:56px;text-align:center;font-family:var(--mono);padding:5px 4px;flex:none}
+.ctr.big{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface-2)}
+.ctr.big .nm{font-weight:600;font-size:13px;letter-spacing:.04em}
+.ch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.totalbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:12px 14px;border-radius:8px;background:var(--surface-2);margin-top:14px}
+.totalbar .big{font-family:var(--mono);font-size:26px;font-weight:500}
+.status{font-size:12px;color:var(--muted);margin-left:auto}
+.status.err{color:var(--bad)}
+.section-gap{margin-top:18px}
+
+/* lists */
+.rows{display:flex;flex-direction:column}
+.row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .nm{flex:1;min-width:0;overflow-wrap:anywhere}
+.row .v{font-family:var(--mono);font-variant-numeric:tabular-nums;min-width:36px;text-align:right}
+.hbar{flex:1.4;height:8px;border-radius:4px;background:var(--surface-2);overflow:hidden;min-width:40px}
+.hbar>i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.mix{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--surface-2);flex:1.4;min-width:40px}
+.mix>i{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+/* kpis */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;min-width:0}
+.kpi .v{font-family:var(--mono);font-size:28px;font-weight:500;line-height:1.2;margin-top:4px;overflow-wrap:anywhere}
+.kpi .v.txt{font-family:var(--display);font-size:20px;font-weight:700}
+.kpi .s{font-size:12px;color:var(--muted);margin-top:2px}
+.up{color:var(--good)} .down{color:var(--bad)}
+
+/* chart */
+.chart{width:100%;overflow-x:auto}
+.chart svg{display:block;width:100%;min-width:520px;height:auto}
+.chart text{fill:var(--muted);font-family:var(--mono);font-size:10px}
+.chart .grid{stroke:var(--line);stroke-width:1}
+.chart .rest{fill:var(--s0)}
+
+/* table */
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+
+/* report */
+pre.report{font-family:var(--mono);font-size:12.5px;line-height:1.55;background:var(--surface-2);border-radius:8px;padding:14px;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;max-height:560px;overflow:auto}
+.issue{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.issue .label b{color:var(--ink)}
+.note{font-size:13px;padding:8px 10px;border-radius:8px;background:var(--surface-2);margin-bottom:6px}
+.note b{font-weight:600}
+
+/* issue notes */
+.notes{display:flex;flex-direction:column}
+.nitem{display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px 10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.nitem:last-of-type{border-bottom:0}
+.nitem .tx{flex:1 1 220px;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13.5px}
+.nitem .meta{font-size:12px;color:var(--muted);flex-basis:100%}
+.nitem .acts{display:flex;gap:6px;margin-left:auto}
+.nedit{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--accent);border-radius:8px;background:var(--surface-2);margin:8px 0}
+.nedit .acts{display:flex;gap:8px;flex-wrap:wrap}
+.linkbtn{background:none;border:0;padding:0;cursor:pointer;color:var(--accent);font-weight:600;font-size:12px}
+.range{display:flex;flex-wrap:wrap;align-items:end;gap:8px 12px}
+.range input[type=date]{padding:5px 8px}
+.filters{display:flex;flex-wrap:wrap;align-items:end;gap:12px 16px;padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);margin-bottom:16px}
+.filters .sep{width:1px;align-self:stretch;background:var(--line)}
+@media (max-width:640px){.filters .sep{display:none}}
+.who-banner{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-bottom:12px}
+.who-banner .big{font-family:var(--display);font-size:22px;font-weight:800}
+
+/* campaigns */
+.pill.info{background:var(--surface-2);color:var(--s2)}
+.pill.bad{background:var(--surface-2);color:var(--bad)}
+.cstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+.cstat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px;text-align:left;cursor:pointer;min-width:0}
+.cstat .v{font-family:var(--mono);font-size:24px;line-height:1.2}
+.cstat[aria-pressed=true]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.clist{display:flex;flex-direction:column;gap:10px}
+.camp{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;min-width:0}
+.camp.open{border-color:var(--accent)}
+.camp-top{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 16px}
+.camp-name{flex:1 1 260px;min-width:0}
+.camp-name h3{font-size:16px;overflow-wrap:anywhere}
+.camp-name .sub{font-size:12px;color:var(--muted);margin-top:2px}
+.camp-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.validity{flex:0 1 260px;min-width:180px}
+.validity .track{height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden;margin-top:6px}
+.validity .track i{display:block;height:100%;background:var(--accent)}
+.validity .track i.warn{background:var(--warn)}
+.validity .dates{font-family:var(--mono);font-size:12px}
+.validity .left{font-size:12px;color:var(--muted)}
+.camp-detail{margin-top:14px;padding-top:14px;border-top:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px}
+@media (max-width:760px){.camp-detail{grid-template-columns:minmax(0,1fr)}}
+.dl{display:grid;grid-template-columns:minmax(110px,max-content) minmax(0,1fr);gap:8px 14px;font-size:13.5px;margin:0}
+.dl dt{color:var(--muted);font-size:12px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;padding-top:2px}
+.dl dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.files{display:flex;flex-direction:column;gap:6px}
+.file{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 10px;border-radius:8px;background:var(--surface-2);font-size:13px}
+.file .fn{flex:1 1 140px;min-width:0;overflow-wrap:anywhere;font-weight:500}
+.file .fs{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.camp-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px}
+.form .full{grid-column:1/-1}
+@media (max-width:640px){.form{grid-template-columns:minmax(0,1fr)}}
+.form input[type=text],.form input[type=url],.form select,.form input[type=date]{width:100%}
+input[type=url],input[type=search]{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+.checks{display:flex;flex-wrap:wrap;gap:8px}
+.check{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:5px 12px;cursor:pointer;background:var(--surface)}
+.check:has(input:checked){border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:600}
+.check input{accent-color:var(--accent)}
+.hint{font-size:12px;color:var(--muted)}
+.drop{border:1.5px dashed var(--line);border-radius:8px;padding:14px;text-align:center;font-size:13px;color:var(--muted)}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.modal{position:fixed;inset:0;background:rgba(10,20,22,.55);z-index:20;display:flex;align-items:center;justify-content:center;padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px))}
+.modal-box{background:var(--surface);border-radius:var(--r);width:min(980px,100%);max-height:100%;display:flex;flex-direction:column;overflow:hidden}
+.modal-h{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.modal-h .t{flex:1;min-width:0;font-weight:600;overflow-wrap:anywhere}
+.modal-b{flex:1;min-height:0;overflow:auto;background:var(--surface-2)}
+.modal-b iframe{display:block;width:100%;height:75vh;border:0;background:#fff}
+.modal-b img{display:block;margin:0 auto;max-height:78vh}
+.mini-camp{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}
+.mini-camp:last-child{border-bottom:0}
+.mini-camp button{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;color:inherit;cursor:pointer;overflow-wrap:anywhere}
+.mini-camp button:hover{color:var(--accent)}
+
+/* onboarding */
+.welcome{max-width:560px;margin:40px auto;text-align:left}
+.welcome h2{font-size:26px;margin-bottom:6px}
+.namegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:18px}
+.namegrid .btn{padding:12px;text-align:left}
+.empty{padding:28px 16px;text-align:center;color:var(--muted)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:13px;z-index:10;max-width:calc(100% - 32px)}
+.loading{padding:60px 0;text-align:center;color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){.hbar>i,.mix>i{transition:width .3s ease}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand"><h1>DMT Daily Tracker</h1><span class="today" id="today"></span></div>
+    <div class="viewas" id="viewas-wrap" hidden><label for="viewas">View as</label><select id="viewas"></select></div>
+    <div class="who" id="who"></div>
+  </header>
+  <div class="banner" id="banner" hidden></div>
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+  <main id="main"><div class="loading">Loading the team’s cases…</div></main>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+const TOPICS_DEFAULT=["DEALERSHIP","INCENTIVE","MNP ISSUE","INFO","USER ISSUE (forward to CS team)","OWNERSHIP","REGISTER ISSUE","ERECHARGE","KPI","VIP NUMBER","CP58","E-INVOICE","BLACK","AFFILIATE","HIERARCHY","DREG","FRAUD","LOGIN/ ONESYS","SRP","Esim","ONEXAPP"];
+const CH_DEFAULT=["CALL","EMAIL","WHATSAPP","WALK-IN"];
+const ROLES={staff:"Support staff",supervisor:"Supervisor",manager:"Manager"};
+const DAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const MON3=MONTHS.map(m=>m.slice(0,3));
+
+const S={db:null,user:null,uid:null,isOwner:false,canEdit:false,meName:"",meAvatar:"",live:false,ready:false,
+  config:normConfig(null),members:{},entries:{},summaries:{},byDate:{},
+  tab:null,viewAs:"",logDate:todayISO(),logStaff:null,teamDate:todayISO(),
+  range:"30",from:null,to:null,dashStaff:"",
+  form:null,formId:null,dirty:false,saveTimer:null,confirmRemove:null,
+  noteEdit:null,noteDel:null,
+  campaigns:{},campEdit:null,campOpen:null,campDel:null,campF:{status:"active",q:"",aud:"",sort:"end"},assets:null,downloads:null};
+
+/* ---------- utils ---------- */
+const $=s=>document.querySelector(s);
+function put(el,...k){el.replaceChildren(...k.flat(Infinity).filter(x=>x!=null&&x!==false))}
+function h(tag,p,...kids){const el=document.createElement(tag);for(const[k,v]of Object.entries(p||{})){if(v==null||v===false)continue;if(k==="class")el.className=v;else if(k==="text")el.textContent=v;else if(k.startsWith("on"))el.addEventListener(k.slice(2),v);else if(k==="value")el.value=v;else el.setAttribute(k,v===true?"":v)}for(const c of kids.flat(Infinity)){if(c==null||c===false)continue;el.append(c.nodeType?c:document.createTextNode(String(c)))}return el}
+function pad(n){return String(n).padStart(2,"0")}
+function iso(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())}
+function todayISO(){return iso(new Date())}
+function parse(s){const[y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)}
+function addDays(s,n){const d=parse(s);d.setDate(d.getDate()+n);return iso(d)}
+function fmtLong(s){const d=parse(s);return DAYS[d.getDay()]+", "+pad(d.getDate())+" "+MONTHS[d.getMonth()]+" "+d.getFullYear()}
+function fmtShort(s){const d=parse(s);return pad(d.getDate())+" "+MON3[d.getMonth()]}
+function fmtDay(s){const d=parse(s);return DAYS[d.getDay()].slice(0,3)+" "+pad(d.getDate())+" "+MON3[d.getMonth()]}
+function fmtStamp(t){if(!t)return"";const d=new Date(t);if(isNaN(d))return"";return pad(d.getDate())+" "+MON3[d.getMonth()]+", "+pad(d.getHours())+":"+pad(d.getMinutes())}
+function sum(o){let t=0;for(const v of Object.values(o||{}))t+=Number(v)||0;return t}
+function addInto(a,b){for(const[k,v]of Object.entries(b||{}))a[k]=(a[k]||0)+(Number(v)||0);return a}
+function slug(n){return (n.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"staff").slice(0,40)}
+function eid(date,key){return date+"__"+key}
+function clone(o){return JSON.parse(JSON.stringify(o))}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function newId(){return "n"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+function toast(msg){const t=$("#toast");t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2400)}
+function timeNow(){const d=new Date();return pad(d.getHours())+":"+pad(d.getMinutes())}
+function swatch(i){return "var(--s"+((i%6)+1)+")"}
+function listDates(a,b){const out=[];for(let d=a;d<=b&&out.length<400;d=addDays(d,1))out.push(d);return out}
+function focusedIn(sel){const a=document.activeElement;return !!(a&&a.closest&&a.closest(sel)&&/TEXTAREA|INPUT|SELECT/.test(a.tagName)&&a.type!=="date")}
+
+function normConfig(c){c=c||{};return{channels:Array.isArray(c.channels)&&c.channels.length?c.channels.slice():CH_DEFAULT.slice(),
+  topics:Array.isArray(c.topics)&&c.topics.length?c.topics.slice():TOPICS_DEFAULT.slice(),
+  roster:Array.isArray(c.roster)?c.roster.filter(r=>r&&r.key&&r.name).map(r=>({key:r.key,name:r.name,role:ROLES[r.role]?r.role:"staff"})):[]}}
+function rosterBy(k){return S.config.roster.find(r=>r.key===k)}
+function nameOf(k){return rosterBy(k)?.name||k}
+function staffKeys(){return S.config.roster.filter(r=>r.role==="staff").map(r=>r.key)}
+function claimedBy(key){for(const[u,m]of Object.entries(S.members))if(m&&m.staff===key)return u;return null}
+function keyOfUid(u){return u&&S.members[u]?.staff||null}
+function myKey(){return keyOfUid(S.uid)}
+function realRole(){if(!S.live)return "manager";if(S.isOwner)return "manager";const k=myKey();const r=k&&rosterBy(k)?.role;if(r)return r;if(S.canEdit)return "manager";return null}
+function myRole(){const r=realRole();if(r==="manager"&&S.viewAs)return S.viewAs;return r}
+function entryTotal(e){if(!e)return 0;return sum(e.channels)||sum(e.topics)||Number(e.total)||0}
+function entryNotes(e){if(!e)return[];if(Array.isArray(e.notes))return e.notes;if(e.remarks&&String(e.remarks).trim())return[{id:"legacy",topic:"",text:String(e.remarks).trim()}];return[]}
+function teamNotes(sm){if(!sm)return[];if(Array.isArray(sm.notes))return sm.notes;const out=[];
+  for(const[t,v]of Object.entries(sm.issues||{}))if(v&&String(v).trim())out.push({id:"i-"+slug(t),topic:t,text:String(v).trim()});
+  String(sm.extra||"").split("\n").map(s=>s.replace(/^-\s*/,"").trim()).filter(Boolean).forEach((s,i)=>out.push({id:"x"+i,topic:"",text:s}));return out}
+
+function indexEntries(){const by={};for(const e of Object.values(S.entries)){if(!e||!e.date)continue;(by[e.date]=by[e.date]||[]).push(e)}S.byDate=by}
+function dayAgg(date,staff){
+  if(staff){const e=S.entries[eid(date,staff)];const t=entryTotal(e);return{date,byStaff:t?{[staff]:t}:{},ch:clone(e?.channels||{}),tp:clone(e?.topics||{}),total:t,entries:e?[e]:[],summary:null,imported:false}}
+  const es=S.byDate[date]||[];const byStaff={};const ch={},tp={};
+  for(const e of es){byStaff[e.staff]=entryTotal(e);addInto(ch,e.channels);addInto(tp,e.topics)}
+  const sm=S.summaries[date];let imported=false;
+  if(sm&&sm.imported){if(!sum(ch)&&sm.imported.channels){addInto(ch,sm.imported.channels);imported=true}if(!sum(tp)&&sm.imported.topics){addInto(tp,sm.imported.topics);imported=true}}
+  const total=sum(byStaff)||sum(ch)||sum(tp);
+  return{date,byStaff,ch,tp,total,entries:es,summary:sm,imported}}
+
+/* ---------- boot ---------- */
+async function boot(){
+  $("#today").textContent=fmtLong(todayISO());
+  setPreset(S.range);
+  let c=window.claude;for(let i=0;i<10&&!c?.use;i++){await new Promise(r=>setTimeout(r,150));c=window.claude}
+  if(!c?.use){return localMode()}
+  const [db,user,assets,downloads]=await Promise.all([c.use("db"),c.use("user"),c.use("assets"),c.use("downloads")]);
+  S.assets=assets;S.downloads=downloads;
+  S.user=user;
+  if(user){const me=await user.me();S.uid=me.id;S.isOwner=me.isOwner;S.canEdit=me.canEdit;S.meName=me.name;S.meAvatar=me.avatarUrl}
+  if(!db){return localMode()}
+  S.db=db;S.live=true;
+  const loaded={config:false,members:false,entries:false,summaries:false,campaigns:false};
+  const done=()=>{if(!S.ready&&Object.values(loaded).every(Boolean)){S.ready=true;renderAll()}else if(S.ready)onData()};
+  const fail=e=>{showBanner(e&&e.code==="revoked"?"This page can no longer reach the team’s data. Reload to try again.":"Live updates stopped. Reload the page to reconnect.")};
+  db.doc("config/team").onSnapshot(s=>{S.config=normConfig(s.exists?s.data():null);loaded.config=true;done()},fail);
+  db.collection("members").onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.members=m;loaded.members=true;done()},fail);
+  db.collection("entries").orderBy("date","desc").limit(1000).onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.entries=m;indexEntries();loaded.entries=true;done()},fail);
+  db.collection("summaries").orderBy("date","desc").limit(400).onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.summaries=m;loaded.summaries=true;done()},fail);
+  db.collection("campaigns").limit(500).onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.campaigns=m;loaded.campaigns=true;done()},fail);
+}
+function localMode(){
+  S.live=false;S.isOwner=true;S.canEdit=true;
+  S.config=normConfig({roster:["Nik","Hanis","Zaireen","Hafizul","Aqib","Khairul"].map(n=>({key:slug(n),name:n,role:"staff"}))});
+  const t={nik:23,hanis:24,zaireen:27,hafizul:24,aqib:29,khairul:23};
+  for(const[k,v]of Object.entries(t))S.entries[eid("2026-10-06",k)]={date:"2026-10-06",staff:k,total:v,channels:{},topics:{},notes:[]};
+  S.summaries["2026-10-06"]={date:"2026-10-06",imported:{channels:{CALL:55,EMAIL:90,WHATSAPP:5},topics:{"DEALERSHIP":34,"INCENTIVE":22,"MNP ISSUE":16,"INFO":15,"USER ISSUE (forward to CS team)":13,"OWNERSHIP":10,"REGISTER ISSUE":8,"ERECHARGE":8,"KPI":4,"VIP NUMBER":3,"CP58":3,"E-INVOICE":2,"BLACK":2,"AFFILIATE":2,"HIERARCHY":2,"DREG":1,"FRAUD":1,"LOGIN/ ONESYS":1,"SRP":1,"Esim":1,"ONEXAPP":1}},
+    notes:[{id:"a",topic:"DEALERSHIP",text:"Handled reactivation of demoted accounts; checked dealer status; and followed up on termination and related requests."},{id:"b",topic:"INCENTIVE",text:"Reviewed incentive status; checked RI and campaign incentive records; and followed up on payment and consent letter-related issues."}]};
+  S.teamDate="2026-10-06";S.logDate="2026-10-06";
+  const t0=todayISO();S.campaigns["example-1"]={name:"Example: Q4 Dealer Activation Booster",code:"EX-Q4-01",type:"Sales / activation",audience:["Dealer","AD","MD"],start:addDays(t0,-20),end:addDays(t0,5),override:"",mechanics:"Example only. Extra payout per new postpaid activation above monthly baseline.",eligibility:"Active dealers with no outstanding clawback.",reward:"RM5 per qualifying activation, paid with next incentive cycle.",target:"Minimum 20 activations in the period",pic:"Dealer Management",memoRef:"EX/MEMO/001",memoDate:addDays(t0,-25),memos:[],links:[],agentNotes:"If a dealer asks why the payout is missing, check the activation date falls inside the period first."};
+  S.campaigns["example-2"]={name:"Example: AD Recruitment Drive",code:"EX-AD-02",type:"Recruitment",audience:["AD"],start:addDays(t0,10),end:addDays(t0,40),override:"",memos:[],links:[]};
+  indexEntries();S.ready=true;
+  showBanner("Preview mode with example figures from 06 Oct. Changes here are not saved.");
+  renderAll();
+}
+function showBanner(t){const b=$("#banner");b.textContent=t;b.hidden=false}
+
+/* ---------- shell ---------- */
+function tabsFor(role){
+  if(role==="staff")return[["log","My day"],["dash","My report"],["camp","Campaigns"]];
+  if(role==="supervisor")return[["team","Team report"],["dash","Dashboard"],["log","Log cases"],["camp","Campaigns"]];
+  if(role==="manager"){const t=[["dash","Dashboard"],["team","Team report"],["log","Log cases"],["camp","Campaigns"]];if(S.canEdit&&!S.viewAs)t.push(["settings","Team & topics"]);return t}
+  return[];
+}
+function renderAll(){
+  if(!S.ready)return;
+  renderWho();
+  const role=myRole();const main=$("#main");
+  if(!role){put($("#tabs"));return renderWelcome(main)}
+  const tabs=tabsFor(role);
+  if(!tabs.some(t=>t[0]===S.tab))S.tab=tabs[0][0];
+  put($("#tabs"),tabs.map(([k,l])=>h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===k),onclick:()=>{if(S.tab===k)return;flushSave();S.noteEdit=null;S.noteDel=null;if(S.campEdit)cancelCampEdit();S.tab=k;renderAll()}},l)));
+  ({log:renderLog,team:renderTeam,dash:renderDash,camp:renderCampaigns,settings:renderSettings})[S.tab]();
+}
+function renderWho(){
+  const w=$("#who");const role=realRole();const k=myKey();
+  const name=(k&&nameOf(k))||S.meName||(S.live?"You":"Preview");
+  put(w,S.meAvatar?h("img",{src:S.meAvatar,alt:""}):null,
+    h("div",{},h("div",{class:"nm",text:name}),role?h("span",{class:"pill",text:ROLES[role]}):h("span",{class:"pill plain",text:"Not set up"})));
+  const va=$("#viewas-wrap");
+  if(role==="manager"){va.hidden=false;const sel=$("#viewas");put(sel,
+      h("option",{value:""},"Manager"),h("option",{value:"supervisor"},"Supervisor"),h("option",{value:"staff"},"Support staff"));
+    sel.value=S.viewAs;sel.onchange=()=>{flushSave();S.viewAs=sel.value;S.tab=null;S.noteEdit=null;renderAll()}}
+  else va.hidden=true;
+}
+function onData(){
+  if(!S.ready)return;
+  const role=myRole();
+  if(!role||!tabsFor(role).some(t=>t[0]===S.tab))return renderAll();
+  renderWho();
+  if(S.tab==="dash"){if(!focusedIn("#main"))renderDash()}
+  else if(S.tab==="team")refreshTeam();
+  else if(S.tab==="log")refreshLog();
+  else if(S.tab==="camp"){if(S.campEdit||focusedIn("#main"))renderCampRows();else renderCampaigns()}
+  else if(S.tab==="settings"){if(!focusedIn("#main"))renderSettings()}
+}
+
+/* ---------- welcome ---------- */
+function renderWelcome(main){
+  const wrap=h("div",{class:"welcome"});
+  if(!S.uid){wrap.append(h("h2",{text:"Sign in to use the tracker"}),h("p",{class:"muted",text:"Open this page while signed in to your organisation account so your cases are saved under your name."}));return put(main,wrap)}
+  const open=S.config.roster.filter(r=>!claimedBy(r.key));
+  wrap.append(h("h2",{text:"Who are you?"}),h("p",{class:"muted",text:"Pick your name once. Your role (support staff, supervisor or manager) comes from the team list your manager keeps."}));
+  if(!open.length)wrap.append(h("div",{class:"panel section-gap"},h("p",{text:"Your name isn’t on the team list yet. Ask your manager to add you under Team & topics, then reload this page."})));
+  else wrap.append(h("div",{class:"namegrid"},open.map(r=>h("button",{class:"btn",onclick:async(ev)=>{const b=ev.currentTarget;b.disabled=true;try{await S.db.doc("members/"+S.uid).set({staff:r.key,at:new Date().toISOString()});toast("Welcome, "+r.name)}catch(e){toast("Couldn’t save your name. Try again.");b.disabled=false}}},
+    h("div",{style:"font-weight:600",text:r.name}),h("div",{class:"label",text:ROLES[r.role]})))));
+  put(main,wrap);
+}
+
+/* ---------- ISSUE NOTES component ---------- */
+/* opts: scope, notes, canEdit, onSave(note) -> Promise, onDelete(id) -> Promise, rerender(), empty, extra(note), showMeta */
+function noteList(o){
+  const wrap=h("div",{class:"notes"});
+  const ed=S.noteEdit&&S.noteEdit.scope===o.scope?S.noteEdit:null;
+  o.notes.forEach(n=>{wrap.append(ed&&ed.id===n.id?noteEditor(o,ed):noteItem(o,n))});
+  if(ed&&ed.id==="new")wrap.append(noteEditor(o,ed));
+  if(!o.notes.length&&!(ed&&ed.id==="new"))wrap.append(h("div",{class:"muted",style:"font-size:13px;padding:6px 0 2px",text:o.empty}));
+  if(o.canEdit&&!(ed&&ed.id==="new"))wrap.append(h("div",{style:"margin-top:10px"},h("button",{class:"btn small",onclick:()=>{S.noteEdit={scope:o.scope,id:"new",topic:o.defaultTopic||"",text:""};S.noteDel=null;o.rerender();focusEditor()}},"+ Add issue note")));
+  return wrap;
+}
+function topicSelect(id,value){
+  const opts=[h("option",{value:""},"General (no topic)")];
+  const list=S.config.topics.slice();if(value&&!list.includes(value))list.push(value);
+  list.forEach(t=>{const op=h("option",{value:t},t);if(t===value)op.selected=true;opts.push(op)});
+  const sel=h("select",{id},opts);if(!value)sel.value="";return sel;
+}
+function noteEditor(o,ed){
+  const sid="ne-topic-"+slug(o.scope)+"-"+ed.id, tid="ne-text-"+slug(o.scope)+"-"+ed.id;
+  const sel=topicSelect(sid,ed.topic);sel.addEventListener("change",()=>ed.topic=sel.value);
+  const ta=h("textarea",{id:tid,rows:"3",class:"ne-text",placeholder:"What happened and what was done, e.g. Followed up RI incentive payment for 4 dealers; pending finance confirmation."});ta.value=ed.text;
+  ta.addEventListener("input",()=>ed.text=ta.value);
+  const save=async()=>{const text=ta.value.trim();if(!text){ta.focus();return toast("Write the note before saving")}
+    const note={id:ed.id==="new"?newId():ed.id,topic:sel.value,text};
+    S.noteEdit=null;try{await o.onSave(note)}catch(e){toast("Couldn’t save the note. Try again.");S.noteEdit=Object.assign(ed,{text,topic:sel.value})}o.rerender()};
+  ta.addEventListener("keydown",e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();save()}if(e.key==="Escape"){S.noteEdit=null;o.rerender()}});
+  return h("div",{class:"nedit"},
+    h("div",{class:"field"},h("label",{class:"label",for:sid},"Topic"),sel),
+    h("div",{class:"field"},h("label",{class:"label",for:tid},ed.id==="new"?"New issue note":"Edit issue note"),ta),
+    h("div",{class:"acts"},h("button",{class:"btn primary small",onclick:save},ed.id==="new"?"Add note":"Save changes"),
+      h("button",{class:"btn small",onclick:()=>{S.noteEdit=null;o.rerender()}},"Cancel")));
+}
+function noteItem(o,n){
+  const delKey=o.scope+"|"+n.id;const confirming=S.noteDel===delKey;
+  const acts=[];
+  if(o.extra){const x=o.extra(n);if(x)acts.push(x)}
+  if(o.canEdit){
+    if(confirming)acts.push(h("button",{class:"btn small danger",onclick:async()=>{S.noteDel=null;try{await o.onDelete(n.id);toast("Note deleted")}catch(e){toast("Couldn’t delete. Try again.")}o.rerender()}},"Delete"),
+      h("button",{class:"btn small",onclick:()=>{S.noteDel=null;o.rerender()}},"Keep"));
+    else acts.push(h("button",{class:"btn small",onclick:()=>{S.noteEdit={scope:o.scope,id:n.id,topic:n.topic||"",text:n.text||""};S.noteDel=null;o.rerender();focusEditor()}},"Edit"),
+      h("button",{class:"btn small",onclick:()=>{S.noteDel=delKey;o.rerender()}},"Delete…"));
+  }
+  const meta=[];if(o.showMeta&&n.byName)meta.push(n.byName);if(n.at)meta.push((n.edited?"edited ":"")+fmtStamp(n.at));
+  return h("div",{class:"nitem"},
+    h("span",{class:n.topic?"pill":"pill plain",text:n.topic||"General"}),
+    h("div",{class:"tx",text:n.text}),
+    acts.length?h("div",{class:"acts"},acts):null,
+    meta.length?h("div",{class:"meta",text:meta.join(" · ")}):null);
+}
+function focusEditor(){setTimeout(()=>{const t=document.querySelector(".nedit textarea");if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length)}},0)}
+function upsert(list,note){const out=list.map(x=>Object.assign({},x));const i=out.findIndex(x=>x.id===note.id);
+  const stamp={at:new Date().toISOString(),by:S.uid||""};
+  if(i>=0)out[i]=Object.assign(out[i],{topic:note.topic,text:note.text,edited:true},stamp);else out.push(Object.assign({id:note.id,topic:note.topic,text:note.text},stamp));return out}
+
+/* ---------- LOG ---------- */
+function logStaffKey(){
+  const role=myRole();
+  if(role==="staff")return myKey()||(S.viewAs?(staffKeys()[0]||S.config.roster[0]?.key):null);
+  if(!S.logStaff||!rosterBy(S.logStaff))S.logStaff=myKey()||staffKeys()[0]||S.config.roster[0]?.key||null;
+  return S.logStaff;
+}
+function loadForm(){
+  const key=logStaffKey();const id=key?eid(S.logDate,key):null;const e=id&&S.entries[id];
+  S.formId=id;S.dirty=false;
+  S.form=e?{date:e.date,staff:e.staff,channels:clone(e.channels||{}),topics:clone(e.topics||{}),notes:clone(entryNotes(e)),updatedAt:e.updatedAt||null,legacyTotal:(!sum(e.channels)&&!sum(e.topics))?Number(e.total)||0:0}
+          :{date:S.logDate,staff:key,channels:{},topics:{},notes:[],updatedAt:null,legacyTotal:0};
+}
+function renderLog(){
+  const main=$("#main");const role=myRole();const key=logStaffKey();
+  if(!key){put(main,h("div",{class:"empty",text:"Add your team under Team & topics before logging cases."}));return}
+  if(!S.form||S.formId!==eid(S.logDate,key))loadForm();
+  const bar=h("div",{class:"bar"},
+    h("div",{class:"grow"},h("h2",{text:role==="staff"?"My cases":"Log cases"}),h("div",{class:"muted",text:fmtLong(S.logDate)})),
+    h("div",{class:"field"},h("label",{class:"label",for:"log-date"},"Date"),
+      h("input",{type:"date",id:"log-date",value:S.logDate,max:todayISO(),onchange:async e=>{if(!e.target.value)return;await flushSave();S.logDate=e.target.value;S.form=null;S.noteEdit=null;renderLog()}})),
+    role!=="staff"?h("div",{class:"field"},h("label",{class:"label",for:"log-staff"},"Staff"),
+      h("select",{id:"log-staff",onchange:async e=>{await flushSave();S.logStaff=e.target.value;S.form=null;S.noteEdit=null;renderLog()}},
+        S.config.roster.map(r=>{const o=h("option",{value:r.key},r.name);if(r.key===key)o.selected=true;return o}))):null);
+  const chGrid=h("div",{class:"ch-grid"},S.config.channels.map((c,i)=>counter("channels",c,"c-ch-"+i,true)));
+  const tpGrid=h("div",{class:"ctr-grid"},S.config.topics.map((t,i)=>counter("topics",t,"c-tp-"+i,false)));
+  const left=h("div",{class:"stack"},
+    h("div",{class:"panel"},
+      h("div",{class:"panel-h"},h("h3",{text:"By channel"}),h("span",{class:"muted",style:"font-size:12px",text:"Tap + as each case comes in. Saves automatically."})),
+      chGrid,
+      h("div",{class:"panel-h section-gap"},h("h3",{text:"By topic"})),
+      tpGrid,
+      h("div",{class:"totalbar",id:"log-totals"})),
+    h("div",{class:"panel",id:"log-notes"}));
+  const right=h("div",{class:"stack"},h("div",{class:"panel",id:"log-camps"}),h("div",{class:"panel",id:"log-recent"}),h("div",{class:"panel",id:"log-teamday"}));
+  put(main,bar,h("div",{class:"grid2"},left,right));
+  updateTotals();renderLogNotes();renderRecent();renderCampMini();renderTeamMini();
+}
+function renderLogNotes(){
+  const el=$("#log-notes");if(!el||!S.form)return;const F=S.form;
+  const top=Object.entries(F.topics).sort((a,b)=>b[1]-a[1])[0];
+  put(el,h("div",{class:"panel-h"},h("h3",{text:"Issue notes"}),h("span",{class:"muted",style:"font-size:12px",text:F.notes.length?F.notes.length+" note"+(F.notes.length===1?"":"s")+" for the daily report":"Your supervisor uses these for the ISSUE section"})),
+    noteList({scope:"log:"+S.formId,notes:F.notes,canEdit:true,defaultTopic:top?top[0]:"",empty:"No issue notes yet. Add one for anything worth flagging today, for example a dealer escalation or a system problem.",
+      rerender:renderLogNotes,
+      onSave:async note=>{F.notes=upsert(F.notes,note);await saveForm(true);toast("Note saved")},
+      onDelete:async id=>{F.notes=F.notes.filter(n=>n.id!==id);await saveForm(true)}}));
+}
+function counter(kind,name,id,big){
+  const F=S.form;const v=Number(F[kind][name])||0;
+  const inp=h("input",{type:"number",min:"0",inputmode:"numeric",id,value:String(v),"aria-label":name,oninput:e=>setCount(kind,name,e.target.value,row)});
+  const row=h("div",{class:"ctr"+(big?" big":"")+(v?" has":"")},
+    h("span",{class:"nm",text:name}),
+    h("button",{type:"button","aria-label":"One less "+name,onclick:()=>{const n=Math.max(0,(Number(F[kind][name])||0)-1);inp.value=n;setCount(kind,name,n,row)}},"−"),
+    inp,
+    h("button",{type:"button","aria-label":"One more "+name,onclick:()=>{const n=(Number(F[kind][name])||0)+1;inp.value=n;setCount(kind,name,n,row)}},"+"));
+  return row;
+}
+function setCount(kind,name,val,row){
+  const n=Math.max(0,Math.floor(Number(val)||0));
+  if(n)S.form[kind][name]=n;else delete S.form[kind][name];
+  row.classList.toggle("has",!!n);updateTotals();scheduleSave();
+}
+function updateTotals(){
+  const el=$("#log-totals");if(!el)return;const F=S.form;
+  const c=sum(F.channels),t=sum(F.topics);const total=c||t||F.legacyTotal;
+  const kids=[h("div",{},h("div",{class:"label",text:"Total cases"}),h("div",{class:"big",text:String(total)})),
+    h("div",{class:"mono",style:"font-size:13px"},"Channels "+c+" · Topics "+t)];
+  if(c&&t&&c!==t)kids.push(h("span",{class:"pill warn",text:(c>t?"Tag "+(c-t)+" more by topic":"Topics exceed channels by "+(t-c))}));
+  else if(c&&t)kids.push(h("span",{class:"pill good",text:"Balanced"}));
+  if(F.legacyTotal&&!c&&!t)kids.push(h("span",{class:"pill plain",text:"Total only, no breakdown"}));
+  kids.push(h("span",{class:"status",id:"save-status",text:S.dirty?"Saving…":(F.updatedAt?"Saved":"Not logged yet")}));
+  put(el,kids);
+}
+function setStatus(t,err){const s=$("#save-status");if(s){s.textContent=t;s.classList.toggle("err",!!err)}}
+function scheduleSave(){S.dirty=true;setStatus("Saving…");clearTimeout(S.saveTimer);S.saveTimer=setTimeout(()=>saveForm(),900)}
+async function flushSave(){if(S.dirty){clearTimeout(S.saveTimer);await saveForm()}}
+async function saveForm(throwOnFail){
+  clearTimeout(S.saveTimer);
+  const F=S.form;if(!F||!F.staff)return;
+  const id=eid(F.date,F.staff);const c=sum(F.channels),t=sum(F.topics);
+  const doc={date:F.date,staff:F.staff,channels:clone(F.channels),topics:clone(F.topics),notes:clone(F.notes),remarks:"",
+    total:c||t||F.legacyTotal||0,updatedBy:S.uid||"",updatedAt:new Date().toISOString()};
+  F.updatedAt=doc.updatedAt;S.entries[id]=doc;indexEntries();S.dirty=false;
+  if(!S.live){setStatus("Saved "+timeNow()+" (preview only)");renderRecent();renderTeamMini();return}
+  try{await S.db.doc("entries/"+id).set(doc);setStatus("Saved "+timeNow())}
+  catch(e){S.dirty=true;setStatus(e&&e.code==="quota_exceeded"?"Storage is full. Ask your manager to clear old months.":"Couldn’t save. Check your connection; it will retry on your next change.",true);if(throwOnFail)throw e}
+  renderRecent();renderTeamMini();
+}
+function refreshLog(){
+  const key=logStaffKey();
+  if(!S.form||S.formId!==(key&&eid(S.logDate,key)))return renderLog();
+  const e=S.entries[S.formId];
+  if(!S.dirty&&!S.noteEdit&&!focusedIn("#main")&&e&&e.updatedAt!==S.form.updatedAt){S.form=null;return renderLog()}
+  renderRecent();renderCampMini();renderTeamMini();
+}
+function renderRecent(){
+  const el=$("#log-recent");if(!el||!S.form)return;const key=S.form.staff;
+  const days=[];for(let i=0;i<7;i++)days.push(addDays(todayISO(),-i));
+  const vals=days.map(d=>entryTotal(S.entries[eid(d,key)]));const max=Math.max(1,...vals);
+  put(el,h("div",{class:"panel-h"},h("h3",{text:(myRole()==="staff"?"Your":nameOf(key)+"’s")+" last 7 days"}),h("span",{class:"mono muted",text:sum(vals)+" cases"})),
+    h("div",{class:"rows"},days.map((d,i)=>h("div",{class:"row"},
+      h("button",{class:"nm",style:"background:none;border:0;padding:0;text-align:left;cursor:pointer;color:inherit"+(d===S.logDate?";font-weight:600":""),onclick:async()=>{await flushSave();S.logDate=d;S.form=null;S.noteEdit=null;renderLog()}},fmtDay(d)),
+      h("div",{class:"hbar"},h("i",{style:"width:"+(vals[i]/max*100)+"%"})),
+      h("span",{class:"v",text:vals[i]?String(vals[i]):"–"})))));
+}
+function renderTeamMini(){
+  const el=$("#log-teamday");if(!el)return;const a=dayAgg(S.logDate);
+  const keys=staffKeys();const logged=keys.filter(k=>a.byStaff[k]).length;
+  put(el,h("div",{class:"panel-h"},h("h3",{text:"Team on "+fmtShort(S.logDate)}),h("span",{class:"mono",text:a.total+" cases"})),
+    h("div",{class:"muted",style:"font-size:13px",text:logged+" of "+keys.length+" staff have logged"}));
+}
+
+/* ---------- TEAM REPORT ---------- */
+function renderTeam(){
+  const main=$("#main");
+  const bar=h("div",{class:"bar"},
+    h("div",{class:"grow"},h("h2",{text:"Team report"}),h("div",{class:"muted",text:fmtLong(S.teamDate)})),
+    h("div",{class:"field"},h("label",{class:"label",for:"team-date"},"Date"),
+      h("input",{type:"date",id:"team-date",value:S.teamDate,max:todayISO(),onchange:e=>{if(!e.target.value)return;S.teamDate=e.target.value;S.noteEdit=null;renderTeam()}})),
+    h("div",{class:"chips"},
+      h("button",{class:"chip",onclick:()=>{S.teamDate=addDays(S.teamDate,-1);S.noteEdit=null;renderTeam()}},"← Previous day"),
+      h("button",{class:"chip",onclick:()=>{if(S.teamDate<todayISO()){S.teamDate=addDays(S.teamDate,1);S.noteEdit=null;renderTeam()}}},"Next day →")));
+  const left=h("div",{class:"stack"},h("div",{class:"panel",id:"team-status"}),h("div",{class:"panel",id:"team-totals"}));
+  const right=h("div",{class:"stack"},h("div",{class:"panel",id:"team-issues"}),h("div",{class:"panel",id:"team-staffnotes"}),h("div",{class:"panel",id:"team-report"}));
+  put(main,bar,h("div",{class:"grid2e"},left,right));
+  refreshTeam(true);
+}
+function refreshTeam(force){
+  const a=dayAgg(S.teamDate);
+  renderTeamStatus(a);renderTeamTotals(a);
+  if(force||!focusedIn("#team-issues"))renderIssues();
+  renderStaffNotes();renderReport();
+}
+function renderTeamStatus(a){
+  const el=$("#team-status");if(!el)return;
+  const keys=[...new Set([...staffKeys(),...Object.keys(a.byStaff)])];
+  const logged=keys.filter(k=>a.byStaff[k]).length;const max=Math.max(1,...keys.map(k=>a.byStaff[k]||0));
+  put(el,h("div",{class:"panel-h"},h("h3",{text:"Who has logged"}),h("span",{class:logged===keys.length&&keys.length?"pill good":"pill warn",text:logged+" / "+keys.length})),
+    keys.length?h("div",{class:"rows"},keys.map(k=>{const v=a.byStaff[k]||0;const e=S.entries[eid(S.teamDate,k)];const nn=entryNotes(e).length;
+      return h("div",{class:"row"},h("span",{class:"nm",text:nameOf(k)}),
+        nn?h("span",{class:"pill plain",title:"Issue notes",text:nn+" note"+(nn===1?"":"s")}):null,
+        v?h("div",{class:"mix",title:"Channel split"},S.config.channels.map((c,i)=>{const n=Number(e?.channels?.[c])||0;return n?h("i",{style:"width:"+(n/max*100)+"%;background:"+swatch(i),title:c+" "+n}):null}),
+            (()=>{const rest=v-sum(e?.channels);return rest>0?h("i",{style:"width:"+(rest/max*100)+"%;background:var(--s0)",title:"No channel split "+rest}):null})())
+          :h("span",{class:"pill plain",text:"Not logged"}),
+        h("span",{class:"v",text:v?String(v):"–"}))}))
+      :h("div",{class:"empty",text:"No support staff on the team list yet."}),
+    h("div",{class:"legend section-gap"},S.config.channels.map((c,i)=>h("span",{},h("i",{class:"sw",style:"background:"+swatch(i)}),c)),h("span",{},h("i",{class:"sw",style:"background:var(--s0)"}),"Not split")));
+}
+function renderTeamTotals(a){
+  const el=$("#team-totals");if(!el)return;
+  const tps=Object.entries(a.tp).filter(([,n])=>n>0).sort((x,y)=>y[1]-x[1]);const max=Math.max(1,...tps.map(t=>t[1]));
+  put(el,h("div",{class:"panel-h"},h("h3",{text:"Totals"}),a.imported?h("span",{class:"pill plain",text:"Breakdown entered as team totals"}):null),
+    h("div",{style:"display:flex;flex-wrap:wrap;gap:8px 24px;margin-bottom:12px"},
+      h("div",{},h("div",{class:"label",text:"Total cases"}),h("div",{class:"num",style:"font-size:30px",text:String(a.total)})),
+      S.config.channels.map((c,i)=>h("div",{},h("div",{class:"label",text:c}),h("div",{class:"num",style:"font-size:20px;color:"+swatch(i),text:a.ch[c]?String(a.ch[c]):"N/A"})))),
+    tps.length?h("div",{class:"rows"},tps.map(([t,n],i)=>h("div",{class:"row"},h("span",{class:"nm",style:i<4?"font-weight:600":"",text:t}),h("div",{class:"hbar"},h("i",{style:"width:"+(n/max*100)+"%"+(i<4?"":";opacity:.55")})),h("span",{class:"v",text:String(n)}))))
+      :h("div",{class:"empty",text:"No topics tagged for this day yet."}));
+}
+function curTeamNotes(){return teamNotes(S.summaries[S.teamDate])}
+async function saveTeamNotes(notes){
+  const date=S.teamDate;const sm=S.summaries[date]||{};
+  const doc={date,notes};if(sm.imported)doc.imported=clone(sm.imported);doc.updatedBy=S.uid||"";doc.updatedAt=new Date().toISOString();
+  S.summaries[date]=doc;
+  if(S.live)await S.db.doc("summaries/"+date).set(doc);
+}
+function renderIssues(){
+  const el=$("#team-issues");if(!el)return;
+  const a=dayAgg(S.teamDate);const top=Object.entries(a.tp).sort((x,y)=>y[1]-x[1]);
+  const notes=sortNotes(curTeamNotes(),a);const canWrite=myRole()!=="staff";
+  put(el,h("div",{class:"panel-h"},h("h3",{text:"ISSUE notes for the report"}),h("span",{class:"muted",style:"font-size:12px",text:"Sorted by topic volume, as in the report"})),
+    noteList({scope:"team:"+S.teamDate,notes,canEdit:canWrite,defaultTopic:top[0]?top[0][0]:"",
+      empty:"No ISSUE notes yet. Add your own, or add staff notes from the list below.",
+      rerender:()=>{renderIssues();renderReport();renderStaffNotes()},
+      onSave:async note=>{await saveTeamNotes(upsert(curTeamNotes(),note));toast("Note saved")},
+      onDelete:async id=>{await saveTeamNotes(curTeamNotes().filter(n=>n.id!==id))}}));
+}
+function sortNotes(notes,a){const rank={};Object.entries(a.tp).sort((x,y)=>y[1]-x[1]).forEach(([t],i)=>rank[t]=i);
+  const r=n=>n.topic?(rank[n.topic]??900):1000;return notes.map((n,i)=>[n,i]).sort((x,y)=>r(x[0])-r(y[0])||x[1]-y[1]).map(x=>x[0])}
+function renderStaffNotes(){
+  const el=$("#team-staffnotes");if(!el)return;
+  const es=(S.byDate[S.teamDate]||[]).slice().sort((a,b)=>nameOf(a.staff).localeCompare(nameOf(b.staff)));
+  const list=[];es.forEach(e=>entryNotes(e).forEach(n=>list.push(Object.assign({},n,{staff:e.staff}))));
+  const tn=curTeamNotes();const canWrite=myRole()!=="staff";
+  const inReport=n=>tn.some(x=>x.src===n.staff+":"+n.id||(x.topic===n.topic&&x.text===n.text));
+  put(el,h("div",{class:"panel-h"},h("h3",{text:"Notes from staff"}),h("span",{class:"mono muted",text:String(list.length)})),
+    list.length?h("div",{class:"notes"},list.map(n=>h("div",{class:"nitem"},
+      h("span",{class:n.topic?"pill":"pill plain",text:n.topic||"General"}),
+      h("div",{class:"tx"},h("b",{text:nameOf(n.staff)+": "}),n.text),
+      h("div",{class:"acts"},inReport(n)?h("span",{class:"pill good",text:"In report"}):canWrite?h("button",{class:"btn small",onclick:async()=>{
+        try{await saveTeamNotes(upsert(curTeamNotes(),{id:newId(),topic:n.topic||"",text:n.text}).map((x,i,arr)=>i===arr.length-1?Object.assign(x,{src:n.staff+":"+n.id}):x));toast("Added to report");renderIssues();renderStaffNotes();renderReport()}catch(e){toast("Couldn’t add. Try again.")}}},"Add to report"):null))))
+      :h("div",{class:"muted",style:"font-size:13px",text:"No staff have added issue notes for this day."}));
+}
+function buildReport(date){
+  const a=dayAgg(date);const B=" ";
+  const L=["DAILY REPORT","DATE: *"+fmtLong(date)+"*",B];
+  const keys=[...new Set([...staffKeys(),...Object.keys(a.byStaff)])];
+  keys.forEach(k=>L.push(nameOf(k)+" : "+(a.byStaff[k]||"-")));
+  L.push(B,"---------------- *TOTAL CASES : "+a.total+"*",B);
+  S.config.channels.forEach(c=>L.push(c+" : "+(a.ch[c]||"N/A")));
+  const tps=Object.entries(a.tp).filter(([,n])=>n>0).sort((x,y)=>y[1]-x[1]);
+  if(tps.length){L.push(B);tps.slice(0,4).forEach(([t,n],i)=>L.push((i+1)+") "+t+" : "+n));
+    if(tps.length>4){L.push(B);tps.slice(4).forEach(([t,n])=>L.push("- "+t+" : "+n))}}
+  const notes=sortNotes(teamNotes(S.summaries[date]),a);
+  if(notes.length){L.push(B,"*ISSUE :*");notes.forEach(n=>L.push("- "+(n.topic?n.topic+": ":"")+n.text.replace(/\n+/g," ")))}
+  return L.join("\n");
+}
+function renderReport(){
+  const el=$("#team-report");if(!el)return;const txt=buildReport(S.teamDate);
+  const pre=h("pre",{class:"report",id:"report-text",text:txt});
+  put(el,h("div",{class:"panel-h"},h("h3",{text:"WhatsApp report"}),
+    h("button",{class:"btn small primary",onclick:async()=>{try{await navigator.clipboard.writeText(txt);toast("Report copied")}catch(e){const r=document.createRange();r.selectNodeContents(pre);const s=getSelection();s.removeAllRanges();s.addRange(r);toast("Selected. Press Ctrl+C or ⌘C to copy")}}},"Copy report")),pre);
+}
+
+/* ---------- DASHBOARD ---------- */
+function setPreset(k){
+  const end=todayISO();const d=parse(end);S.range=k;
+  if(k==="month"){S.from=iso(new Date(d.getFullYear(),d.getMonth(),1));S.to=end}
+  else if(k==="lastmonth"){S.from=iso(new Date(d.getFullYear(),d.getMonth()-1,1));S.to=iso(new Date(d.getFullYear(),d.getMonth(),0))}
+  else if(k!=="custom"){S.from=addDays(end,-(Number(k)-1));S.to=end}
+}
+function aggRange(dates,staff){
+  const days=dates.map(d=>dayAgg(d,staff));const ch={},tp={},st={},stDays={},stTop={};
+  for(const d of days){addInto(ch,d.ch);addInto(tp,d.tp);for(const[k,v]of Object.entries(d.byStaff)){if(!v)continue;st[k]=(st[k]||0)+v;stDays[k]=(stDays[k]||0)+1}
+    for(const e of d.entries)stTop[e.staff]=addInto(stTop[e.staff]||{},e.topics)}
+  const total=days.reduce((s,d)=>s+d.total,0);const active=days.filter(d=>d.total>0);
+  return{days,ch,tp,staff:st,staffDays:stDays,staffTop:stTop,total,active}
+}
+function renderDash(){
+  const main=$("#main");const role=myRole();
+  if(role==="staff")S.dashStaff=logStaffKey()||"";
+  else if(S.dashStaff&&!rosterBy(S.dashStaff))S.dashStaff="";
+  const who=S.dashStaff;
+  if(S.from>S.to){const t=S.from;S.from=S.to;S.to=t}
+  const dates=listDates(S.from,S.to);const n=dates.length;
+  const R=aggRange(dates,who);
+  const P=aggRange(listDates(addDays(S.from,-n),addDays(S.from,-1)),who);
+  const team=who?aggRange(dates,""):null;
+
+  const presets=[["7","7 days"],["30","30 days"],["90","90 days"],["month","This month"],["lastmonth","Last month"]];
+  const fromI=h("input",{type:"date",id:"dash-from",value:S.from,max:todayISO(),onchange:e=>{if(!e.target.value)return;S.from=e.target.value;S.range="custom";renderDash()}});
+  const toI=h("input",{type:"date",id:"dash-to",value:S.to,max:todayISO(),onchange:e=>{if(!e.target.value)return;S.to=e.target.value;S.range="custom";renderDash()}});
+  const staffSel=role==="staff"?null:h("select",{id:"dash-staff",onchange:e=>{S.dashStaff=e.target.value;renderDash()}},
+    h("option",{value:""},"All staff (team view)"),S.config.roster.map(r=>{const o=h("option",{value:r.key},r.name+(r.role!=="staff"?" · "+ROLES[r.role]:""));if(r.key===who)o.selected=true;return o}));
+  if(staffSel&&!who)staffSel.value="";
+  const filters=h("div",{class:"filters"},
+    h("div",{class:"field"},h("span",{class:"label",text:"Quick range"}),h("div",{class:"chips",role:"group","aria-label":"Quick range"},presets.map(([k,l])=>h("button",{class:"chip","aria-pressed":String(S.range===k),onclick:()=>{setPreset(k);renderDash()}},l)))),
+    h("div",{class:"sep"}),
+    h("div",{class:"range"},h("div",{class:"field"},h("label",{class:"label",for:"dash-from"},"From"),fromI),h("div",{class:"field"},h("label",{class:"label",for:"dash-to"},"To"),toI)),
+    staffSel?h("div",{class:"sep"}):null,
+    staffSel?h("div",{class:"field"},h("label",{class:"label",for:"dash-staff"},"Staff"),staffSel):null);
+
+  const title=who?(role==="staff"?"My report":nameOf(who)):"Team dashboard";
+  const head=h("div",{class:"bar"},h("div",{class:"grow"},h("h2",{text:title}),
+    h("div",{class:"muted",text:fmtShort(S.from)+" "+parse(S.from).getFullYear()+" – "+fmtShort(S.to)+" "+parse(S.to).getFullYear()+" · "+n+" day"+(n===1?"":"s")})),
+    who&&role!=="staff"?h("button",{class:"btn small",onclick:()=>{S.dashStaff="";renderDash()}},"← Back to team view"):null);
+
+  const notesPanel=renderDashNotes(dates,who);
+  if(!R.total){put(main,filters,head,h("div",{class:"panel empty",text:who?nameOf(who)+" has no cases logged in this range.":"No cases logged in this range yet. Staff log their day under My day; figures appear here as they save."}),notesPanel?h("div",{class:"section-gap"},notesPanel):null);return}
+
+  const avg=R.active.length?(R.total/R.active.length):0;
+  const peak=R.days.reduce((m,d)=>d.total>m.total?d:m,R.days[0]);
+  const tps=Object.entries(R.tp).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  const chs=S.config.channels.map((c,i)=>[c,R.ch[c]||0,i]);const chSum=sum(R.ch);
+  const topCh=chs.slice().sort((a,b)=>b[1]-a[1])[0];
+  const delta=P.total?Math.round((R.total-P.total)/P.total*100):null;
+  const deltaEl=delta==null?"No earlier period to compare":h("span",{class:delta>=0?"up":"down",text:(delta>=0?"▲ ":"▼ ")+Math.abs(delta)+"% vs previous "+n+" days"});
+  const kp=[kpi("Total cases",String(R.total),deltaEl),
+    kpi(who?"Avg per day logged":"Daily average",avg.toFixed(who?1:0),"Across "+R.active.length+" day"+(R.active.length===1?"":"s")+(who?" logged":" with cases")),
+    kpi("Busiest day",String(peak.total),fmtDay(peak.date))];
+  if(who)kp.push(kpi("Share of team",team.total?Math.round(R.total/team.total*100)+"%":"–",team.total?R.total+" of "+team.total+" team cases":""));
+  else kp.push(kpi("Top channel",chSum?topCh[0]:"–",chSum?Math.round(topCh[1]/chSum*100)+"% of tagged cases":"No channel split yet",true));
+  kp.push(kpi("Top topic",tps[0]?tps[0][0]:"–",tps[0]?tps[0][1]+" cases · "+Math.round(tps[0][1]/sum(R.tp)*100)+"%":"No topics tagged yet",true));
+  const kpis=h("div",{class:"kpis"},kp);
+
+  const chart=h("div",{class:"panel"},h("div",{class:"panel-h"},h("h3",{text:"Daily cases by channel"}),
+      h("div",{class:"legend"},S.config.channels.map((c,i)=>h("span",{},h("i",{class:"sw",style:"background:"+swatch(i)}),c)),h("span",{},h("i",{class:"sw",style:"background:var(--s0)"}),"Not split"))),
+    h("div",{class:"chart"}));
+  chart.querySelector(".chart").innerHTML=stackChart(R.days);
+
+  const tmax=Math.max(1,...tps.map(t=>t[1]));const tsum=sum(R.tp)||1;
+  const topics=h("div",{class:"panel"},h("div",{class:"panel-h"},h("h3",{text:"Cases by topic"}),h("span",{class:"mono muted",text:tps.length+" topics"})),
+    tps.length?h("div",{class:"rows"},tps.slice(0,12).map(([t,v],i)=>h("div",{class:"row"},h("span",{class:"nm",style:i<4?"font-weight:600":"",text:t}),h("div",{class:"hbar"},h("i",{style:"width:"+(v/tmax*100)+"%"+(i<4?"":";opacity:.55")})),h("span",{class:"v",text:String(v)}),h("span",{class:"v muted",style:"min-width:42px",text:Math.round(v/tsum*100)+"%"}))))
+      :h("div",{class:"muted",text:"No topics tagged in this range."}),
+    tps.length>12?h("div",{class:"muted",style:"font-size:12px;margin-top:8px",text:"+ "+(tps.length-12)+" smaller topics: "+tps.slice(12).map(t=>t[0]+" "+t[1]).join(", ")}):null);
+
+  const chMix=h("div",{class:"panel"},h("div",{class:"panel-h"},h("h3",{text:"Channel mix"})),
+    h("div",{class:"mix",style:"height:14px;margin-bottom:12px"},chs.map(([c,v,i])=>v?h("i",{style:"width:"+(v/(chSum||1)*100)+"%;background:"+swatch(i),title:c+" "+v}):null)),
+    h("div",{class:"rows"},chs.map(([c,v,i])=>h("div",{class:"row"},h("i",{class:"sw",style:"background:"+swatch(i)}),h("span",{class:"nm",text:c}),h("span",{class:"v",text:v?String(v):"N/A"}),h("span",{class:"v muted",style:"min-width:42px",text:chSum?Math.round(v/chSum*100)+"%":""})))));
+
+  const detail=who?dayTable(R,who):staffTable(R);
+  put(main,filters,head,kpis,chart,h("div",{class:"grid2e section-gap"},topics,chMix),h("div",{class:"section-gap"},detail),notesPanel?h("div",{class:"section-gap"},notesPanel):null);
+}
+function staffTable(R){
+  const keys=[...new Set([...staffKeys(),...Object.keys(R.staff)])].sort((a,b)=>(R.staff[b]||0)-(R.staff[a]||0));
+  const smax=Math.max(1,...keys.map(k=>R.staff[k]||0));
+  return h("div",{class:"panel"},h("div",{class:"panel-h"},h("h3",{text:"Staff productivity"}),h("span",{class:"muted",style:"font-size:12px",text:"Select a name to open that person’s report"})),
+    h("div",{class:"tbl-wrap"},h("table",{},h("thead",{},h("tr",{},h("th",{},"Staff"),h("th",{class:"n"},"Cases"),h("th",{class:"n"},"Days logged"),h("th",{class:"n"},"Avg / day"),h("th",{class:"n"},"Share"),h("th",{},"Top topic"),h("th",{style:"min-width:120px"},""))),
+      h("tbody",{},keys.map(k=>{const v=R.staff[k]||0,d=R.staffDays[k]||0;const tt=Object.entries(R.staffTop[k]||{}).sort((a,b)=>b[1]-a[1])[0];
+        return h("tr",{},h("td",{},h("button",{class:"linkbtn",style:"font-size:13px",onclick:()=>{S.dashStaff=k;renderDash();window.scrollTo({top:0})}},nameOf(k))),
+          h("td",{class:"n",text:String(v)}),h("td",{class:"n",text:String(d)}),h("td",{class:"n",text:d?(v/d).toFixed(1):"–"}),h("td",{class:"n",text:R.total?Math.round(v/R.total*100)+"%":"–"}),
+          h("td",{class:"muted",text:tt?tt[0]:"–"}),h("td",{},h("div",{class:"hbar"},h("i",{style:"width:"+(v/smax*100)+"%"}))))})))));
+}
+function dayTable(R,who){
+  const rows=R.days.filter(d=>d.total>0).slice().reverse();
+  return h("div",{class:"panel"},h("div",{class:"panel-h"},h("h3",{text:"Day by day"}),h("span",{class:"mono muted",text:rows.length+" days logged"})),
+    h("div",{class:"tbl-wrap"},h("table",{},h("thead",{},h("tr",{},h("th",{},"Date"),h("th",{class:"n"},"Total"),S.config.channels.map(c=>h("th",{class:"n"},c)),h("th",{},"Top topic"),h("th",{class:"n"},"Notes"))),
+      h("tbody",{},rows.map(d=>{const e=d.entries[0];const tt=Object.entries(d.tp).sort((a,b)=>b[1]-a[1])[0];const nn=entryNotes(e).length;
+        return h("tr",{},h("td",{text:fmtDay(d.date)}),h("td",{class:"n",style:"font-weight:600",text:String(d.total)}),S.config.channels.map(c=>h("td",{class:"n",text:d.ch[c]?String(d.ch[c]):"–"})),
+          h("td",{class:"muted",text:tt?tt[0]:"–"}),h("td",{class:"n",text:nn?String(nn):"–"}))})))));
+}
+function renderDashNotes(dates,who){
+  const set=new Set(dates);const list=[];
+  for(const d of dates){for(const e of (S.byDate[d]||[])){if(who&&e.staff!==who)continue;entryNotes(e).forEach(n=>list.push({date:d,by:nameOf(e.staff),topic:n.topic,text:n.text}))}
+    if(!who)teamNotes(S.summaries[d]).forEach(n=>{if(!n.src)list.push({date:d,by:"Team report",topic:n.topic,text:n.text})})}
+  list.sort((a,b)=>b.date.localeCompare(a.date));
+  const topicsIn=[...new Set(list.map(n=>n.topic||"General"))].sort();
+  if(S.noteTopic&&!topicsIn.includes(S.noteTopic))S.noteTopic="";
+  const shown=list.filter(n=>!S.noteTopic||(n.topic||"General")===S.noteTopic);
+  const sel=h("select",{id:"dash-note-topic","aria-label":"Filter notes by topic",onchange:e=>{S.noteTopic=e.target.value;renderDash()}},h("option",{value:""},"All topics"),topicsIn.map(t=>{const o=h("option",{value:t},t);if(t===S.noteTopic)o.selected=true;return o}));
+  return h("div",{class:"panel"},h("div",{class:"panel-h"},h("h3",{text:"Issue notes in this range"}),h("div",{style:"display:flex;gap:10px;align-items:center"},h("span",{class:"mono muted",text:shown.length+" notes"}),list.length?sel:null)),
+    shown.length?h("div",{class:"tbl-wrap"},h("table",{},h("thead",{},h("tr",{},h("th",{},"Date"),who?null:h("th",{},"By"),h("th",{},"Topic"),h("th",{},"Note"))),
+      h("tbody",{},shown.slice(0,80).map(n=>h("tr",{},h("td",{style:"white-space:nowrap",text:fmtDay(n.date)}),who?null:h("td",{style:"white-space:nowrap",text:n.by}),h("td",{},h("span",{class:n.topic?"pill":"pill plain",text:n.topic||"General"})),h("td",{style:"white-space:pre-wrap;overflow-wrap:anywhere;min-width:220px",text:n.text}))))))
+      :h("div",{class:"muted",style:"font-size:13px",text:"No issue notes in this range."}),
+    shown.length>80?h("div",{class:"muted",style:"font-size:12px;margin-top:8px",text:"Showing the latest 80. Narrow the dates or topic to see older notes."}):null);
+}
+function kpi(label,v,sub,txt){return h("div",{class:"kpi"},h("div",{class:"label",text:label}),h("div",{class:"v"+(txt?" txt":""),text:v}),h("div",{class:"s"},sub))}
+function niceMax(m){if(m<=5)return 5;const p=Math.pow(10,Math.floor(Math.log10(m)));for(const f of[1,1.5,2,2.5,3,4,5,6,8,10])if(f*p>=m)return f*p;return 10*p}
+function stackChart(days){
+  const W=760,H=230,L=34,R=8,T=10,B=26;const n=days.length;const max=niceMax(Math.max(1,...days.map(d=>d.total)));
+  const iw=W-L-R,ih=H-T-B;const bw=iw/n;const w=Math.max(2,Math.min(28,bw*.72));
+  const y=v=>T+ih-(v/max)*ih;let s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Daily cases by channel">';
+  for(let i=0;i<=4;i++){const v=max/4*i;const yy=y(v);s+='<line class="grid" x1="'+L+'" x2="'+(W-R)+'" y1="'+yy+'" y2="'+yy+'"/><text x="'+(L-6)+'" y="'+(yy+3)+'" text-anchor="end">'+Math.round(v)+'</text>'}
+  const every=Math.ceil(n/10);
+  days.forEach((d,i)=>{const x=L+i*bw+(bw-w)/2;let acc=0;
+    s+='<g><title>'+esc(fmtDay(d.date)+": "+d.total+" cases")+(S.config.channels.map(c=>d.ch[c]?" · "+esc(c)+" "+d.ch[c]:"").join(""))+'</title>';
+    S.config.channels.forEach((c,ci)=>{const v=d.ch[c]||0;if(!v)return;s+='<rect x="'+x+'" y="'+y(acc+v)+'" width="'+w+'" height="'+(y(acc)-y(acc+v))+'" style="fill:'+swatch(ci)+'"/>';acc+=v});
+    const rest=d.total-acc;if(rest>0)s+='<rect class="rest" x="'+x+'" y="'+y(acc+rest)+'" width="'+w+'" height="'+(y(acc)-y(acc+rest))+'"/>';
+    s+='</g>';
+    if(i%every===0)s+='<text x="'+(x+w/2)+'" y="'+(H-8)+'" text-anchor="middle">'+esc(fmtShort(d.date))+'</text>'});
+  return s+'</svg>';
+}
+
+/* ---------- CAMPAIGNS ---------- */
+const AUD=["Dealer","AD","MD"];
+const CTYPES=["Incentive","Sales / activation","Recharge","Port-in (MNP)","Device bundle","Recruitment","Retention","Other"];
+const OVERRIDES=[["","Follow the dates (automatic)"],["draft","Draft (not announced yet)"],["hold","On hold"],["cancelled","Cancelled"]];
+function canManageCamp(){return myRole()&&myRole()!=="staff"}
+function daysBetween(a,b){return Math.round((parse(b)-parse(a))/86400000)}
+function campStatus(c){const t=todayISO();
+  if(c.override==="cancelled")return{key:"cancelled",label:"Cancelled",cls:"bad"};
+  if(c.override==="hold")return{key:"hold",label:"On hold",cls:"warn"};
+  if(c.override==="draft")return{key:"draft",label:"Draft",cls:"plain"};
+  if(c.start&&t<c.start)return{key:"upcoming",label:"Upcoming",cls:"info"};
+  if(c.end&&t>c.end)return{key:"expired",label:"Expired",cls:"plain"};
+  if(c.end&&daysBetween(t,c.end)<=7)return{key:"ending",label:"Ending soon",cls:"warn"};
+  return{key:"ongoing",label:"Ongoing",cls:"good"}}
+function audLabel(a){a=Array.isArray(a)?a:[];if(AUD.every(x=>a.includes(x)))return["All (Dealer, AD, MD)"];return a.length?a:["Not set"]}
+function fmtD(s){return s?fmtShort(s)+" "+parse(s).getFullYear():"–"}
+function validity(c){const t=todayISO();if(!c.start||!c.end)return{text:"Dates not set",pct:0};
+  const total=daysBetween(c.start,c.end)+1;
+  if(t<c.start){const n=daysBetween(t,c.start);return{text:"Starts in "+n+" day"+(n===1?"":"s")+" · runs "+total+" days",pct:0}}
+  if(t>c.end){const n=daysBetween(c.end,t);return{text:"Ended "+n+" day"+(n===1?"":"s")+" ago · ran "+total+" days",pct:100}}
+  const left=daysBetween(t,c.end);const done=daysBetween(c.start,t)+1;
+  return{text:(left===0?"Last day today":left+" day"+(left===1?"":"s")+" left")+" · day "+done+" of "+total,pct:Math.round(done/total*100),warn:left<=7}}
+function campList(){return Object.entries(S.campaigns).map(([id,c])=>Object.assign({id},c))}
+function matchesStatus(c,f){const k=campStatus(c).key;
+  if(f==="all")return true;if(f==="active")return k==="ongoing"||k==="ending";
+  if(f==="inactive")return k==="hold"||k==="cancelled"||k==="draft";return k===f}
+function fileSize(b){if(!b)return"";return b<1024*1024?Math.max(1,Math.round(b/1024))+" KB":(b/1048576).toFixed(1)+" MB"}
+
+function renderCampaigns(){
+  const main=$("#main");const can=canManageCamp();
+  const head=h("div",{class:"bar"},
+    h("div",{class:"grow"},h("h2",{text:"Dealer campaigns"}),h("div",{class:"muted",text:"Validity, mechanics and memos for every campaign the desk gets asked about"})),
+    h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"},
+      S.downloads?h("button",{class:"btn",onclick:exportCampaigns},"Export CSV"):null,
+      can&&!S.campEdit?h("button",{class:"btn primary",onclick:()=>startCampEdit(null)},"+ New campaign"):null));
+  put(main,head,h("div",{id:"camp-editor"}),h("div",{id:"camp-listwrap"}));
+  renderCampEditor();renderCampList();
+}
+function renderCampList(){
+  const el=$("#camp-listwrap");if(!el)return;const F=S.campF;const all=campList();
+  const count=k=>all.filter(c=>matchesStatus(c,k)).length;
+  const stat=(k,l)=>h("button",{class:"cstat","aria-pressed":String(F.status===k),onclick:()=>{F.status=k;renderCampList()}},h("div",{class:"label",text:l}),h("div",{class:"v",text:String(count(k))}));
+  const q=h("input",{type:"search",id:"camp-q",placeholder:"Search name, code, memo ref, mechanics",value:F.q,style:"flex:1 1 220px;min-width:0",oninput:e=>{F.q=e.target.value;renderCampRows()}});
+  const aud=h("select",{id:"camp-aud","aria-label":"Campaign for",onchange:e=>{F.aud=e.target.value;renderCampRows()}},h("option",{value:""},"For: everyone"),AUD.map(a=>h("option",{value:a},"For: "+a)));aud.value=F.aud;
+  const sort=h("select",{id:"camp-sort","aria-label":"Sort",onchange:e=>{F.sort=e.target.value;renderCampRows()}},h("option",{value:"end"},"Sort: ending soonest"),h("option",{value:"start"},"Sort: newest start"),h("option",{value:"name"},"Sort: name A–Z"));sort.value=F.sort;
+  const keep=focusedIn("#camp-listwrap")?document.activeElement.id:null;
+  put(el,h("div",{class:"cstats"},stat("active","Ongoing"),stat("ending","Ending in 7 days"),stat("upcoming","Upcoming"),stat("expired","Expired"),stat("inactive","Draft / on hold / cancelled"),stat("all","All campaigns")),
+    h("div",{class:"filters"},q,aud,sort),
+    h("div",{class:"clist",id:"camp-rows"}));
+  renderCampRows();
+  if(keep){const k=document.getElementById(keep);if(k){k.focus();if(k.type==="search")k.setSelectionRange(k.value.length,k.value.length)}}
+}
+function renderCampRows(){
+  const el=$("#camp-rows");if(!el)return;const F=S.campF;const q=F.q.trim().toLowerCase();
+  let rows=campList().filter(c=>matchesStatus(c,F.status)).filter(c=>!F.aud||(c.audience||[]).includes(F.aud))
+    .filter(c=>!q||[c.name,c.code,c.memoRef,c.mechanics,c.type,c.pic,c.eligibility,c.reward].join(" ").toLowerCase().includes(q));
+  rows.sort(F.sort==="name"?(a,b)=>String(a.name).localeCompare(String(b.name)):F.sort==="start"?(a,b)=>String(b.start).localeCompare(String(a.start)):(a,b)=>{const ea=campStatus(a).key==="expired",eb=campStatus(b).key==="expired";return ea-eb||(ea?String(b.end).localeCompare(String(a.end)):String(a.end).localeCompare(String(b.end)))});
+  if(!rows.length){const none=!Object.keys(S.campaigns).length;
+    put(el,h("div",{class:"panel empty"},none?(canManageCamp()?"No campaigns yet. Use “+ New campaign” to add the first one with its dates and memo.":"No campaigns have been added yet. Your supervisor or manager adds them here."):"No campaigns match these filters."));return}
+  put(el,rows.map(campCard));
+}
+function campCard(c){
+  const st=campStatus(c);const v=validity(c);const open=S.campOpen===c.id;const can=canManageCamp();
+  const card=h("div",{class:"camp"+(open?" open":""),id:"camp-"+c.id},
+    h("div",{class:"camp-top"},
+      h("div",{class:"camp-name"},h("h3",{text:c.name||"Untitled campaign"}),
+        h("div",{class:"sub",text:[c.code,c.type,c.memoRef?"Memo "+c.memoRef:""].filter(Boolean).join(" · ")}),
+        h("div",{class:"camp-meta"},h("span",{class:"pill "+st.cls,text:st.label}),audLabel(c.audience).map(a=>h("span",{class:"pill plain",text:a})),
+          (c.memos||[]).length?h("span",{class:"pill plain",text:(c.memos.length)+" memo"+(c.memos.length===1?"":"s")}):null)),
+      h("div",{class:"validity"},h("div",{class:"dates",text:fmtD(c.start)+" → "+fmtD(c.end)}),
+        h("div",{class:"track"},h("i",{class:v.warn?"warn":"",style:"width:"+v.pct+"%"})),
+        h("div",{class:"left",text:v.text})),
+      h("button",{class:"btn small","aria-expanded":String(open),onclick:()=>{S.campOpen=open?null:c.id;S.campDel=null;renderCampRows()}},open?"Hide details":"Details")));
+  if(open){
+    const dl=h("dl",{class:"dl"});
+    const add=(k,v)=>{if(v&&String(v).trim())dl.append(h("dt",{text:k}),h("dd",{text:v}))};
+    add("Mechanics",c.mechanics);add("Eligibility",c.eligibility);add("Reward",c.reward);add("Target / KPI",c.target);
+    add("Person in charge",c.pic);add("Memo ref",[c.memoRef,c.memoDate?"dated "+fmtD(c.memoDate):""].filter(Boolean).join(", "));
+    add("Validity",fmtD(c.start)+" to "+fmtD(c.end)+(c.start&&c.end?" ("+(daysBetween(c.start,c.end)+1)+" days)":""));
+    add("For",audLabel(c.audience).join(", "));
+    if(c.updatedAt)add("Last updated",fmtStamp(c.updatedAt)+(keyOfUid(c.updatedBy)?" by "+nameOf(keyOfUid(c.updatedBy)):""));
+    const side=h("div",{class:"stack",style:"gap:12px"},
+      h("div",{},h("div",{class:"label",style:"margin-bottom:6px",text:"Memos"}),memoFiles(c.memos||[],false)),
+      (c.links||[]).length?h("div",{},h("div",{class:"label",style:"margin-bottom:6px",text:"Reference links"}),h("div",{class:"files"},c.links.map(l=>h("div",{class:"file"},h("a",{class:"fn",href:l.url,target:"_blank",rel:"noopener noreferrer",text:l.label||l.url}))))):null,
+      c.agentNotes?h("div",{},h("div",{class:"label",style:"margin-bottom:6px",text:"Notes for support staff"}),h("div",{class:"note",style:"white-space:pre-wrap",text:c.agentNotes})):null);
+    card.append(h("div",{class:"camp-detail"},dl.childNodes.length?dl:h("div",{class:"muted",text:"No details added yet."}),side));
+    if(can){const confirming=S.campDel===c.id;
+      card.append(h("div",{class:"camp-acts"},
+        h("button",{class:"btn small primary",onclick:()=>startCampEdit(c.id)},"Edit"),
+        h("button",{class:"btn small",onclick:()=>startCampEdit(c.id,true)},"Duplicate"),
+        confirming?[h("span",{class:"hint",style:"align-self:center",text:"Remove this campaign"+((c.memos||[]).length?" and its memo files":"")+"? This can’t be undone."}),
+            h("button",{class:"btn small danger",onclick:()=>removeCampaign(c)},"Remove"),h("button",{class:"btn small",onclick:()=>{S.campDel=null;renderCampRows()}},"Keep")]
+          :h("button",{class:"btn small danger",onclick:()=>{S.campDel=c.id;renderCampRows()}},"Remove…")));}
+  }
+  return card;
+}
+function memoFiles(memos,editing){
+  if(!memos.length)return h("div",{class:"muted",style:"font-size:13px",text:editing?"No memo files yet.":"No memo attached."});
+  return h("div",{class:"files"},memos.map(m=>h("div",{class:"file"},
+    h("span",{class:"pill plain",text:/pdf/.test(m.type)?"PDF":"Image"}),
+    h("span",{class:"fn",text:m.name}),h("span",{class:"fs",text:fileSize(m.size)}),
+    h("button",{class:"btn small",onclick:()=>openViewer(m)},"View"),
+    S.downloads&&!editing?h("button",{class:"btn small",onclick:()=>downloadMemo(m)},"Download"):null,
+    editing?h("button",{class:"btn small danger",onclick:()=>removeDraftMemo(m.id)},"Remove"):null)));
+}
+async function removeCampaign(c){
+  S.campDel=null;
+  try{
+    if(S.live)await S.db.doc("campaigns/"+c.id).delete();
+    delete S.campaigns[c.id];
+    if(S.assets)for(const m of c.memos||[]){try{await S.assets.delete(m.id)}catch(e){}}
+    toast("Campaign removed");
+  }catch(e){toast("Couldn’t remove the campaign. Try again.")}
+  S.campOpen=null;renderCampList();
+}
+
+/* editor */
+function blankCamp(){const t=todayISO();return{name:"",code:"",type:"Incentive",audience:AUD.slice(),start:t,end:addDays(t,30),override:"",mechanics:"",eligibility:"",reward:"",target:"",pic:"",memoRef:"",memoDate:"",memos:[],links:[],agentNotes:""}}
+function startCampEdit(id,dup){
+  const src=id?clone(S.campaigns[id]||{}):blankCamp();
+  if(dup){src.name=(src.name||"")+" (copy)";src.memos=[];src.override="draft";delete src.createdAt;delete src.createdBy}
+  S.campEdit={id:dup?null:id,data:Object.assign(blankCamp(),src),uploaded:[],removed:[],busy:false};
+  if(!S.campEdit.data.links)S.campEdit.data.links=[];
+  renderCampaigns();window.scrollTo({top:0,behavior:"smooth"});
+  setTimeout(()=>$("#ce-name")?.focus(),50);
+}
+function renderCampEditor(){
+  const el=$("#camp-editor");if(!el)return;const E=S.campEdit;
+  if(!E){put(el);return}
+  const D=E.data;
+  const txt=(id,label,key,ph,full)=>{const i=h("input",{type:"text",id,value:D[key]||"",placeholder:ph||"",oninput:e=>D[key]=e.target.value});return h("div",{class:"field"+(full?" full":"")},h("label",{class:"label",for:id},label),i)};
+  const area=(id,label,key,ph,rows)=>{const t=h("textarea",{id,rows:String(rows||3),placeholder:ph||"",oninput:e=>D[key]=e.target.value});t.value=D[key]||"";return h("div",{class:"field full"},h("label",{class:"label",for:id},label),t)};
+  const dateF=(id,label,key)=>h("div",{class:"field"},h("label",{class:"label",for:id},label),h("input",{type:"date",id,value:D[key]||"",onchange:e=>{D[key]=e.target.value;updDur()}}));
+  const typeSel=h("select",{id:"ce-type",onchange:e=>D.type=e.target.value},CTYPES.map(t=>h("option",{value:t},t)));typeSel.value=CTYPES.includes(D.type)?D.type:"Other";
+  const ovSel=h("select",{id:"ce-status",onchange:e=>{D.override=e.target.value;updDur()}},OVERRIDES.map(([k,l])=>h("option",{value:k},l)));ovSel.value=D.override||"";
+  const checks=h("div",{class:"checks",role:"group","aria-label":"Campaign is for"},
+    AUD.map(a=>{const cb=h("input",{type:"checkbox",id:"ce-aud-"+a,onchange:e=>{D.audience=AUD.filter(x=>x===a?e.target.checked:(D.audience||[]).includes(x))}});cb.checked=(D.audience||[]).includes(a);return h("label",{class:"check",for:"ce-aud-"+a},cb,a)}),
+    h("button",{type:"button",class:"btn small",onclick:()=>{D.audience=AUD.slice();renderCampEditor()}},"Select all"));
+  const dur=h("div",{class:"hint",id:"ce-dur"});
+  function updDur(){const ok=D.start&&D.end;dur.textContent=!ok?"Set both dates.":D.end<D.start?"End date is before the start date.":"Valid for "+(daysBetween(D.start,D.end)+1)+" days · status will show as "+campStatus(D).label;dur.style.color=ok&&D.end<D.start?"var(--bad)":""}
+  updDur();
+
+  // memo upload
+  const fileIn=h("input",{type:"file",id:"ce-file",accept:"application/pdf,image/png,image/jpeg,image/webp",multiple:true,hidden:true,onchange:e=>{uploadMemos([...e.target.files]);e.target.value=""}});
+  const drop=S.assets?h("div",{class:"drop"},fileIn,
+      h("div",{},"Drop memo files here or ",h("button",{type:"button",class:"linkbtn",style:"font-size:13px",onclick:()=>fileIn.click()},"choose files")),
+      h("div",{class:"hint",style:"margin-top:4px",text:"PDF, PNG, JPG or WEBP, up to 20 MB each. For Word or Excel memos, save as PDF or add a link below."}))
+    :h("div",{class:"hint",text:S.live?"Uploading memo files needs edit access to this page. You can still add a link to the memo below.":"Memo upload works on the live page."});
+  if(S.assets){drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("over")});drop.addEventListener("dragleave",()=>drop.classList.remove("over"));
+    drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("over");uploadMemos([...e.dataTransfer.files])})}
+
+  // links
+  const links=h("div",{class:"files"},D.links.map((l,i)=>h("div",{class:"file"},h("span",{class:"fn",text:l.label||l.url}),h("span",{class:"fs",text:l.url}),h("button",{class:"btn small danger",onclick:()=>{D.links.splice(i,1);renderCampEditor()}},"Remove"))));
+  const ll=h("input",{type:"text",id:"ce-link-label",placeholder:"Label, e.g. Memo (SharePoint)",style:"flex:1 1 160px;min-width:0"});
+  const lu=h("input",{type:"url",id:"ce-link-url",placeholder:"https://…",style:"flex:2 1 220px;min-width:0"});
+  const addLink=()=>{const u=lu.value.trim();if(!/^https?:\/\//i.test(u)){lu.focus();return toast("Enter a link starting with https://")}D.links.push({label:ll.value.trim(),url:u});renderCampEditor()};
+
+  put(el,h("div",{class:"panel",style:"margin-bottom:16px;border-color:var(--accent)"},
+    h("div",{class:"panel-h"},h("h3",{text:E.id?"Edit campaign":"New campaign"}),h("span",{class:"hint",text:"Fields marked * are required"})),
+    h("div",{class:"form"},
+      txt("ce-name","Campaign name *","name","e.g. October Postpaid Activation Incentive",true),
+      txt("ce-code","Campaign code","code","e.g. DLR-OCT26-01"),
+      h("div",{class:"field"},h("label",{class:"label",for:"ce-type"},"Campaign type"),typeSel),
+      h("div",{class:"field full"},h("span",{class:"label",text:"Campaign is for *"}),checks),
+      dateF("ce-start","Start date *","start"),dateF("ce-end","End date *","end"),
+      h("div",{class:"field"},h("label",{class:"label",for:"ce-status"},"Status"),ovSel),
+      h("div",{class:"field",style:"justify-content:end"},dur),
+      area("ce-mech","Mechanics","mechanics","How the campaign works and what dealers must do",3),
+      area("ce-elig","Eligibility","eligibility","Who qualifies, exclusions, conditions",2),
+      area("ce-reward","Reward / incentive","reward","Payout amount, method and payment timing",2),
+      txt("ce-target","Target / KPI","target","e.g. Minimum 20 activations"),
+      txt("ce-pic","Person in charge","pic","Team or name to escalate to"),
+      txt("ce-memoref","Memo reference no.","memoRef","e.g. XOX/DM/2026/045"),
+      dateF("ce-memodate","Memo date","memoDate"),
+      h("div",{class:"field full"},h("span",{class:"label",text:"Memo files"}),memoFiles(D.memos,true),drop,h("div",{class:"hint",id:"ce-upload-status"})),
+      h("div",{class:"field full"},h("span",{class:"label",text:"Reference links"}),links,h("div",{style:"display:flex;flex-wrap:wrap;gap:8px"},ll,lu,h("button",{type:"button",class:"btn small",onclick:addLink},"Add link"))),
+      area("ce-agent","Notes for support staff","agentNotes","Common dealer questions and how to answer them, checks to run before escalating",3)),
+    h("div",{class:"camp-acts"},h("button",{class:"btn primary",id:"ce-save",onclick:saveCampaign},E.id?"Save changes":"Add campaign"),h("button",{class:"btn",onclick:cancelCampEdit},"Cancel"))));
+}
+async function uploadMemos(files){
+  const E=S.campEdit;if(!E||!S.assets)return;const st=$("#ce-upload-status");
+  for(const f of files){
+    const type=/\.pdf$/i.test(f.name)?"application/pdf":/\.png$/i.test(f.name)?"image/png":/\.jpe?g$/i.test(f.name)?"image/jpeg":/\.webp$/i.test(f.name)?"image/webp":(["application/pdf","image/png","image/jpeg","image/webp"].includes(f.type)?f.type:"");
+    if(!type){toast(f.name+": upload memos as PDF or image");continue}
+    if(f.size>20*1048576){toast(f.name+" is over 20 MB");continue}
+    if(st)st.textContent="Uploading "+f.name+"…";
+    try{const r=await S.assets.upload(f,{type});
+      const m={id:r.id,name:f.name,type:r.contentType||type,size:r.sizeBytes||f.size,at:new Date().toISOString(),by:S.uid||""};
+      if(S.campEdit!==E){try{await S.assets.delete(r.id)}catch(e){}return}
+      E.data.memos.push(m);E.uploaded.push(r.id);
+    }catch(e){const c=e&&e.code;toast(c==="too_large"?f.name+" is too large":c==="unsupported_type"?f.name+": unsupported file type":c==="quota_or_state"?"File storage is full. Remove old memos first.":"Couldn’t upload "+f.name+". Try again.")}
+  }
+  if(S.campEdit===E){renderCampEditor();const s2=$("#ce-upload-status");if(s2)s2.textContent=E.data.memos.length?"Uploaded. Save the campaign to keep these files.":""}
+}
+async function removeDraftMemo(id){
+  const E=S.campEdit;if(!E)return;E.data.memos=E.data.memos.filter(m=>m.id!==id);
+  if(E.uploaded.includes(id)){E.uploaded=E.uploaded.filter(x=>x!==id);try{await S.assets?.delete(id)}catch(e){}}
+  else E.removed.push(id);
+  renderCampEditor();
+}
+async function cancelCampEdit(){
+  const E=S.campEdit;S.campEdit=null;
+  if(E&&S.assets)for(const id of E.uploaded){try{await S.assets.delete(id)}catch(e){}}
+  renderCampaigns();
+}
+async function saveCampaign(){
+  const E=S.campEdit;if(!E||E.busy)return;const D=E.data;
+  D.name=(D.name||"").trim();
+  if(!D.name){$("#ce-name")?.focus();return toast("Give the campaign a name")}
+  if(!D.start||!D.end){return toast("Set the start and end dates")}
+  if(D.end<D.start){$("#ce-end")?.focus();return toast("End date must be on or after the start date")}
+  if(!(D.audience||[]).length)return toast("Choose who the campaign is for");
+  const id=E.id||(slug(D.name).slice(0,30)+"-"+Math.random().toString(36).slice(2,7));
+  const now=new Date().toISOString();
+  const doc={name:D.name,code:(D.code||"").trim(),type:D.type||"",audience:AUD.filter(a=>D.audience.includes(a)),start:D.start,end:D.end,override:D.override||"",
+    mechanics:D.mechanics||"",eligibility:D.eligibility||"",reward:D.reward||"",target:D.target||"",pic:D.pic||"",memoRef:(D.memoRef||"").trim(),memoDate:D.memoDate||"",
+    memos:D.memos||[],links:D.links||[],agentNotes:D.agentNotes||"",
+    createdAt:D.createdAt||now,createdBy:D.createdBy||S.uid||"",updatedAt:now,updatedBy:S.uid||""};
+  E.busy=true;const b=$("#ce-save");if(b)b.disabled=true;
+  try{
+    if(S.live)await S.db.doc("campaigns/"+id).set(doc);
+    S.campaigns[id]=doc;
+    if(S.assets)for(const mid of E.removed){try{await S.assets.delete(mid)}catch(e){}}
+    S.campEdit=null;S.campOpen=id;toast(E.id?"Campaign updated":"Campaign added");
+    renderCampaigns();setTimeout(()=>document.getElementById("camp-"+id)?.scrollIntoView({behavior:"smooth",block:"center"}),60);
+  }catch(e){E.busy=false;if(b)b.disabled=false;toast(e&&e.code==="quota_exceeded"?"Storage is full. Remove old campaigns first.":"Couldn’t save the campaign. Try again.")}
+}
+
+/* memo viewer + downloads */
+function openViewer(m){
+  const url="/_blob/"+m.id;
+  const body=/pdf/.test(m.type)?h("iframe",{src:url,title:m.name}):h("img",{src:url,alt:m.name});
+  const close=()=>{ov.remove();document.removeEventListener("keydown",onKey)};
+  const onKey=e=>{if(e.key==="Escape")close()};
+  const ov=h("div",{class:"modal",role:"dialog","aria-modal":"true","aria-label":m.name,onclick:e=>{if(e.target===ov)close()}},
+    h("div",{class:"modal-box"},
+      h("div",{class:"modal-h"},h("span",{class:"t",text:m.name}),
+        h("a",{class:"btn small",href:url,target:"_blank",rel:"noopener"},"Open in new tab"),
+        S.downloads?h("button",{class:"btn small",onclick:()=>downloadMemo(m)},"Download"):null,
+        h("button",{class:"btn small primary",onclick:close},"Close")),
+      h("div",{class:"modal-b"},body)));
+  document.body.append(ov);document.addEventListener("keydown",onKey);
+  ov.querySelector(".btn.primary").focus();
+}
+async function downloadMemo(m){
+  if(!S.downloads)return;
+  try{const r=await fetch("/_blob/"+m.id);if(!r.ok)throw new Error("missing");const blob=await r.blob();
+    let name=m.name;if(!/\.(pdf|png|jpe?g|webp)$/i.test(name))name+=/pdf/.test(m.type)?".pdf":".png";
+    await S.downloads.save({filename:name,data:blob});toast("Saved "+name)}
+  catch(e){if(e&&e.code==="declined")return;toast(e&&e.message==="missing"?"This memo file is no longer available.":"Couldn’t download. Use Open in new tab instead.")}
+}
+async function exportCampaigns(){
+  const rows=[["Name","Code","Type","For","Start","End","Days","Status","Days left","Mechanics","Eligibility","Reward","Target / KPI","Person in charge","Memo ref","Memo date","Memo files","Links"]];
+  campList().sort((a,b)=>String(a.end).localeCompare(String(b.end))).forEach(c=>{const st=campStatus(c);const left=c.end&&todayISO()<=c.end?daysBetween(todayISO(),c.end):"";
+    rows.push([c.name,c.code,c.type,audLabel(c.audience).join(" / "),c.start,c.end,c.start&&c.end?daysBetween(c.start,c.end)+1:"",st.label,left,c.mechanics,c.eligibility,c.reward,c.target,c.pic,c.memoRef,c.memoDate,(c.memos||[]).map(m=>m.name).join("; "),(c.links||[]).map(l=>l.url).join("; ")])});
+  const csv=rows.map(r=>r.map(v=>{v=v==null?"":String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(",")).join("\r\n");
+  try{await S.downloads.save({filename:"dealer-campaigns-"+todayISO()+".csv",data:"﻿"+csv});toast("CSV saved")}catch(e){if(!(e&&e.code==="declined"))toast("Couldn’t export the list.")}
+}
+
+/* sidebar on Log cases */
+function renderCampMini(){
+  const el=$("#log-camps");if(!el)return;
+  const act=campList().filter(c=>matchesStatus(c,"active")).sort((a,b)=>String(a.end).localeCompare(String(b.end)));
+  put(el,h("div",{class:"panel-h"},h("h3",{text:"Ongoing campaigns"}),h("span",{class:"mono muted",text:String(act.length)})),
+    act.length?h("div",{},act.slice(0,8).map(c=>{const st=campStatus(c);const left=daysBetween(todayISO(),c.end);
+      return h("div",{class:"mini-camp"},h("button",{onclick:async()=>{await flushSave();S.tab="camp";S.campOpen=c.id;S.campF.status="all";renderAll();setTimeout(()=>document.getElementById("camp-"+c.id)?.scrollIntoView({block:"center"}),60)}},c.name),
+        h("span",{class:"pill "+st.cls,text:left===0?"Ends today":left+"d left"}))}),
+      act.length>8?h("div",{class:"hint",style:"margin-top:6px",text:"+ "+(act.length-8)+" more on the Campaigns tab"}):null)
+    :h("div",{class:"muted",style:"font-size:13px",text:"No campaigns running today."}));
+}
+
+/* ---------- SETTINGS ---------- */
+async function saveConfig(cfg,msg){
+  S.config=normConfig(cfg);
+  if(S.live){try{await S.db.doc("config/team").set({channels:S.config.channels,topics:S.config.topics,roster:S.config.roster,updatedAt:new Date().toISOString()});if(msg)toast(msg)}catch(e){toast("Couldn’t save the team list. You need edit access to this page.")}}
+  else if(msg)toast(msg+" (preview only)");
+  renderAll();
+}
+function renderSettings(){
+  const main=$("#main");const C=S.config;
+  const rows=C.roster.map(r=>{
+    const u=claimedBy(r.key);
+    const sel=h("select",{id:"role-"+r.key,"aria-label":"Role for "+r.name,onchange:e=>{const cfg=clone(C);cfg.roster.find(x=>x.key===r.key).role=e.target.value;saveConfig(cfg,r.name+" is now "+ROLES[e.target.value].toLowerCase())}},
+      Object.entries(ROLES).map(([k,l])=>{const o=h("option",{value:k},l);if(k===r.role)o.selected=true;return o}));
+    const link=u?h("span",{style:"display:inline-flex;gap:6px;align-items:center"},h("span",{class:"pill good",text:u===S.uid?"Linked to you":"Linked"}),
+        S.live?h("button",{class:"btn small",onclick:async()=>{try{await S.db.doc("members/"+u).delete();toast(r.name+" unlinked")}catch(e){toast("Couldn’t unlink.")}}},"Unlink"):null)
+      :h("span",{style:"display:inline-flex;gap:6px;align-items:center"},h("span",{class:"pill plain",text:"Waiting to sign in"}),
+        S.live&&S.uid&&!myKey()?h("button",{class:"btn small",onclick:async()=>{try{await S.db.doc("members/"+S.uid).set({staff:r.key,at:new Date().toISOString()});toast("Linked "+r.name+" to you")}catch(e){toast("Couldn’t link.")}}},"This is me"):null);
+    const confirming=S.confirmRemove===r.key;
+    const rm=confirming?h("span",{style:"display:inline-flex;gap:6px"},h("button",{class:"btn small danger",onclick:()=>{S.confirmRemove=null;const cfg=clone(C);cfg.roster=cfg.roster.filter(x=>x.key!==r.key);saveConfig(cfg,r.name+" removed")}},"Remove"),h("button",{class:"btn small",onclick:()=>{S.confirmRemove=null;renderSettings()}},"Keep"))
+      :h("button",{class:"btn small",onclick:()=>{S.confirmRemove=r.key;renderSettings()}},"Remove…");
+    return h("tr",{},h("td",{style:"font-weight:600",text:r.name}),h("td",{},sel),h("td",{},link),h("td",{style:"text-align:right"},rm));
+  });
+  const nm=h("input",{type:"text",id:"new-name",placeholder:"Name as it appears in the report"});
+  const nr=h("select",{id:"new-role","aria-label":"Role"},Object.entries(ROLES).map(([k,l])=>h("option",{value:k},l)));
+  const add=()=>{const n=nm.value.trim();if(!n)return nm.focus();let k=slug(n),i=2;while(C.roster.some(r=>r.key===k))k=slug(n)+"-"+(i++);const cfg=clone(C);cfg.roster.push({key:k,name:n,role:nr.value});saveConfig(cfg,n+" added")};
+  nm.addEventListener("keydown",e=>{if(e.key==="Enter")add()});
+  const team=h("div",{class:"panel"},h("div",{class:"panel-h"},h("h3",{text:"Team"}),h("span",{class:"muted",style:"font-size:12px",text:"Report order follows this list"})),
+    h("div",{class:"tbl-wrap"},h("table",{},h("thead",{},h("tr",{},h("th",{},"Name"),h("th",{},"Role"),h("th",{},"Account"),h("th",{},""))),h("tbody",{},rows))),
+    h("div",{style:"display:flex;flex-wrap:wrap;gap:8px;margin-top:14px"},nm,nr,h("button",{class:"btn primary",onclick:add},"Add person")),
+    h("p",{class:"muted",style:"font-size:12px;margin:12px 0 0",text:"Share this page with the team. Each person opens it once and picks their name; their role here decides what they see. Support staff log their own day and see their own report, supervisors also see the team report and dashboard, managers see everything."}));
+  const tpta=h("textarea",{id:"topics-ta",rows:"10"});tpta.value=C.topics.join("\n");
+  const chta=h("textarea",{id:"channels-ta",rows:"4"});chta.value=C.channels.join("\n");
+  const lists=h("div",{class:"panel"},h("div",{class:"panel-h"},h("h3",{text:"Topics and channels"}),h("span",{class:"muted",style:"font-size:12px",text:"One per line, spelled as in the report"})),
+    h("div",{class:"grid2e"},h("div",{class:"field"},h("label",{class:"label",for:"topics-ta"},"Topics"),tpta),h("div",{class:"field"},h("label",{class:"label",for:"channels-ta"},"Channels"),chta)),
+    h("div",{style:"margin-top:12px"},h("button",{class:"btn primary",onclick:()=>{const t=[...new Set(tpta.value.split("\n").map(s=>s.trim()).filter(Boolean))];const c=[...new Set(chta.value.split("\n").map(s=>s.trim()).filter(Boolean))];if(!t.length||!c.length)return toast("Keep at least one topic and one channel");const cfg=clone(C);cfg.topics=t;cfg.channels=c;saveConfig(cfg,"Lists saved")}},"Save lists")),
+    h("p",{class:"muted",style:"font-size:12px;margin:12px 0 0",text:"Renaming a topic starts a new count; past days keep the old name."}));
+  put(main,h("div",{class:"bar"},h("div",{class:"grow"},h("h2",{text:"Team & topics"}))),team,lists);
+}
+
+boot();
+</script>
