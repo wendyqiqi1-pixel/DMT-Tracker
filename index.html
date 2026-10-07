@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>DMT Daily Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -227,8 +232,15 @@ input[type=url],input[type=search]{background:var(--surface);border:1px solid va
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:13px;z-index:10;max-width:calc(100% - 32px)}
 .loading{padding:60px 0;text-align:center;color:var(--muted)}
 @media (prefers-reduced-motion:no-preference){.hbar>i,.mix>i{transition:width .3s ease}}
+[hidden]{display:none!important}
+img{max-width:100%}
+input[type=email]{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+.welcome .btn.primary{font-size:15px}
 </style>
-
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+</head>
+<body>
 <div class="app">
   <header class="top">
     <div class="brand"><h1>DMT Daily Tracker</h1><span class="today" id="today"></span></div>
@@ -255,7 +267,7 @@ const S={db:null,user:null,uid:null,isOwner:false,canEdit:false,meName:"",meAvat
   tab:null,viewAs:"",logDate:todayISO(),logStaff:null,teamDate:todayISO(),
   range:"30",from:null,to:null,dashStaff:"",
   form:null,formId:null,dirty:false,saveTimer:null,confirmRemove:null,
-  noteEdit:null,noteDel:null,
+  noteEdit:null,noteDel:null,allMembers:[],memberNames:{},meKey:null,meEmail:"",
   campaigns:{},campEdit:null,campOpen:null,campDel:null,campF:{status:"active",q:"",aud:"",sort:"end"},assets:null,downloads:null};
 
 /* ---------- utils ---------- */
@@ -286,14 +298,14 @@ function focusedIn(sel){const a=document.activeElement;return !!(a&&a.closest&&a
 
 function normConfig(c){c=c||{};return{channels:Array.isArray(c.channels)&&c.channels.length?c.channels.slice():CH_DEFAULT.slice(),
   topics:Array.isArray(c.topics)&&c.topics.length?c.topics.slice():TOPICS_DEFAULT.slice(),
-  roster:Array.isArray(c.roster)?c.roster.filter(r=>r&&r.key&&r.name).map(r=>({key:r.key,name:r.name,role:ROLES[r.role]?r.role:"staff"})):[]}}
+  roster:Array.isArray(c.roster)?c.roster.filter(r=>r&&r.key&&r.name).map(r=>({key:r.key,name:r.name,email:r.email||"",role:ROLES[r.role]?r.role:"staff"})):[]}}
 function rosterBy(k){return S.config.roster.find(r=>r.key===k)}
-function nameOf(k){return rosterBy(k)?.name||k}
+function nameOf(k){return rosterBy(k)?.name||S.memberNames?.[k]||k}
 function staffKeys(){return S.config.roster.filter(r=>r.role==="staff").map(r=>r.key)}
-function claimedBy(key){for(const[u,m]of Object.entries(S.members))if(m&&m.staff===key)return u;return null}
-function keyOfUid(u){return u&&S.members[u]?.staff||null}
-function myKey(){return keyOfUid(S.uid)}
-function realRole(){if(!S.live)return "manager";if(S.isOwner)return "manager";const k=myKey();const r=k&&rosterBy(k)?.role;if(r)return r;if(S.canEdit)return "manager";return null}
+function claimedBy(key){const r=rosterBy(key);return r&&r.email?r.email:null}
+function keyOfUid(u){return u||null}
+function myKey(){return S.meKey||null}
+function realRole(){if(!S.live)return "manager";const k=myKey();return (k&&rosterBy(k)?.role)||null}
 function myRole(){const r=realRole();if(r==="manager"&&S.viewAs)return S.viewAs;return r}
 function entryTotal(e){if(!e)return 0;return sum(e.channels)||sum(e.topics)||Number(e.total)||0}
 function entryNotes(e){if(!e)return[];if(Array.isArray(e.notes))return e.notes;if(e.remarks&&String(e.remarks).trim())return[{id:"legacy",topic:"",text:String(e.remarks).trim()}];return[]}
@@ -311,55 +323,153 @@ function dayAgg(date,staff){
   const total=sum(byStaff)||sum(ch)||sum(tp);
   return{date,byStaff,ch,tp,total,entries:es,summary:sm,imported}}
 
-/* ---------- boot ---------- */
+/* ---------- boot & data (Supabase) ---------- */
+const CFG=window.DMT_CONFIG||{};
+const CONFIGURED=!!(CFG.supabaseUrl&&CFG.supabaseAnonKey&&!/YOUR-PROJECT|YOUR-ANON/.test(CFG.supabaseUrl+CFG.supabaseAnonKey)&&window.supabase);
+let sb=null;
+
 async function boot(){
   $("#today").textContent=fmtLong(todayISO());
   setPreset(S.range);
-  let c=window.claude;for(let i=0;i<10&&!c?.use;i++){await new Promise(r=>setTimeout(r,150));c=window.claude}
-  if(!c?.use){return localMode()}
-  const [db,user,assets,downloads]=await Promise.all([c.use("db"),c.use("user"),c.use("assets"),c.use("downloads")]);
-  S.assets=assets;S.downloads=downloads;
-  S.user=user;
-  if(user){const me=await user.me();S.uid=me.id;S.isOwner=me.isOwner;S.canEdit=me.canEdit;S.meName=me.name;S.meAvatar=me.avatarUrl}
-  if(!db){return localMode()}
-  S.db=db;S.live=true;
-  const loaded={config:false,members:false,entries:false,summaries:false,campaigns:false};
-  const done=()=>{if(!S.ready&&Object.values(loaded).every(Boolean)){S.ready=true;renderAll()}else if(S.ready)onData()};
-  const fail=e=>{showBanner(e&&e.code==="revoked"?"This page can no longer reach the team’s data. Reload to try again.":"Live updates stopped. Reload the page to reconnect.")};
-  db.doc("config/team").onSnapshot(s=>{S.config=normConfig(s.exists?s.data():null);loaded.config=true;done()},fail);
-  db.collection("members").onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.members=m;loaded.members=true;done()},fail);
-  db.collection("entries").orderBy("date","desc").limit(1000).onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.entries=m;indexEntries();loaded.entries=true;done()},fail);
-  db.collection("summaries").orderBy("date","desc").limit(400).onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.summaries=m;loaded.summaries=true;done()},fail);
-  db.collection("campaigns").limit(500).onSnapshot(q=>{const m={};q.docs.forEach(d=>m[d.id]=d.data());S.campaigns=m;loaded.campaigns=true;done()},fail);
+  if(!CONFIGURED)return localMode();
+  sb=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseAnonKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+  sb.auth.onAuthStateChange((ev)=>{if(ev==="SIGNED_OUT")location.reload()});
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session)return renderSignIn();
+  S.live=true;S.uid=session.user.id;S.meEmail=(session.user.email||"").toLowerCase();
+  S.meName=session.user.user_metadata?.full_name||session.user.user_metadata?.name||"";
+  try{await DB.loadAll()}catch(e){console.error(e);return renderProblem("Couldn’t load the tracker data. Check your connection and reload. If it keeps happening, ask your manager to check the database setup.",e)}
+  const me=S.allMembers.find(m=>m.active&&(m.email||"").toLowerCase()===S.meEmail);
+  if(!me)return renderNoAccess();
+  S.meKey=me.key;
+  S.assets=(me.role==="supervisor"||me.role==="manager")?STORAGE:null;
+  S.downloads=LOCAL_DOWNLOADS;
+  S.ready=true;renderAll();
+  sb.channel("dmt-live").on("postgres_changes",{event:"*",schema:"public"},()=>scheduleReload()).subscribe();
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)scheduleReload()});
 }
+let reloadTimer=null;
+function scheduleReload(){clearTimeout(reloadTimer);reloadTimer=setTimeout(async()=>{try{await DB.loadAll();onData()}catch(e){console.warn("reload failed",e)}},500)}
+
+const DB={
+  async loadAll(){
+    const since=addDays(todayISO(),-400);
+    const [tm,st,en,su,ca]=await Promise.all([
+      sb.from("team_members").select("*").order("sort",{ascending:true}),
+      sb.from("settings").select("*").eq("id",1).maybeSingle(),
+      sb.from("entries").select("*").gte("date",since).limit(10000),
+      sb.from("summaries").select("*").gte("date",since).limit(1000),
+      sb.from("campaigns").select("*").limit(1000)]);
+    for(const r of [tm,st,en,su,ca])if(r.error)throw r.error;
+    S.allMembers=tm.data||[];
+    S.memberNames={};S.allMembers.forEach(m=>S.memberNames[m.key]=m.name);
+    S.config=normConfig({topics:st.data?.topics,channels:st.data?.channels,roster:S.allMembers.filter(m=>m.active)});
+    const E={};(en.data||[]).forEach(r=>{E[r.id]={date:r.date,staff:r.staff,channels:r.channels||{},topics:r.topics||{},notes:r.notes||[],total:r.total||0,updatedBy:r.updated_by||"",updatedAt:r.updated_at}});
+    S.entries=E;indexEntries();
+    const SM={};(su.data||[]).forEach(r=>{SM[r.date]={date:r.date,notes:r.notes||[],imported:r.imported||undefined,updatedBy:r.updated_by||"",updatedAt:r.updated_at}});
+    S.summaries=SM;
+    const C={};(ca.data||[]).forEach(r=>{C[r.id]=Object.assign({},r.data||{},{updatedAt:r.updated_at,updatedBy:r.updated_by||""})});
+    S.campaigns=C;
+  },
+  async saveEntry(id,doc){
+    const {error}=await sb.from("entries").upsert({id,date:doc.date,staff:doc.staff,channels:doc.channels,topics:doc.topics,notes:doc.notes,total:doc.total,updated_by:S.meKey,updated_at:doc.updatedAt});
+    if(error)throw error;
+  },
+  async saveSummary(doc){
+    const row={date:doc.date,notes:doc.notes||[],updated_by:S.meKey,updated_at:doc.updatedAt};
+    if(doc.imported)row.imported=doc.imported;
+    const {error}=await sb.from("summaries").upsert(row);if(error)throw error;
+  },
+  async saveCampaign(id,doc){
+    const data=Object.assign({},doc);delete data.updatedAt;delete data.updatedBy;
+    const {error}=await sb.from("campaigns").upsert({id,data,updated_by:S.meKey,updated_at:doc.updatedAt});if(error)throw error;
+  },
+  async deleteCampaign(id){const {error}=await sb.from("campaigns").delete().eq("id",id);if(error)throw error},
+  async saveConfig(cfg){
+    const {error:e1}=await sb.from("settings").upsert({id:1,topics:cfg.topics,channels:cfg.channels,updated_at:new Date().toISOString()});if(e1)throw e1;
+    const rows=cfg.roster.map((r,i)=>({key:r.key,name:r.name,role:r.role,email:(r.email||"").trim().toLowerCase()||null,sort:i,active:true}));
+    if(rows.length){const {error:e2}=await sb.from("team_members").upsert(rows);if(e2)throw e2}
+    const keep=new Set(rows.map(r=>r.key));
+    const gone=S.allMembers.filter(m=>m.active&&!keep.has(m.key)).map(m=>m.key);
+    if(gone.length){const {error:e3}=await sb.from("team_members").update({active:false}).in("key",gone);if(e3)throw e3}
+  }
+};
+
+/* memo files in Supabase Storage (bucket "memos") */
+const STORAGE={
+  async upload(file,{type}){
+    const safe=file.name.replace(/[^A-Za-z0-9._-]+/g,"_").slice(-80);
+    const path="campaigns/"+Date.now().toString(36)+Math.random().toString(36).slice(2,8)+"/"+safe;
+    const {error}=await sb.storage.from("memos").upload(path,file,{contentType:type,upsert:false});
+    if(error)throw Object.assign(new Error(error.message),{code:/size|large/i.test(error.message)?"too_large":"upstream_error"});
+    return{id:path,contentType:type,sizeBytes:file.size};
+  },
+  async delete(path){const {error}=await sb.storage.from("memos").remove([path]);if(error)throw error;return{deleted:true}}
+};
+async function memoUrl(m,download){
+  if(!sb)return null;
+  const {data,error}=await sb.storage.from("memos").createSignedUrl(m.id,3600,download?{download:m.name}:undefined);
+  if(error)throw error;return data.signedUrl;
+}
+/* browser downloads (CSV export) */
+const LOCAL_DOWNLOADS={async save({filename,data}){
+  const blob=data instanceof Blob?data:new Blob([data],{type:/\.csv$/i.test(filename)?"text/csv;charset=utf-8":"application/octet-stream"});
+  const url=URL.createObjectURL(blob);const a=h("a",{href:url,download:filename});document.body.append(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);return{status:"saved"}}};
+
 function localMode(){
-  S.live=false;S.isOwner=true;S.canEdit=true;
-  S.config=normConfig({roster:["Nik","Hanis","Zaireen","Hafizul","Aqib","Khairul"].map(n=>({key:slug(n),name:n,role:"staff"}))});
-  const t={nik:23,hanis:24,zaireen:27,hafizul:24,aqib:29,khairul:23};
-  for(const[k,v]of Object.entries(t))S.entries[eid("2026-10-06",k)]={date:"2026-10-06",staff:k,total:v,channels:{},topics:{},notes:[]};
-  S.summaries["2026-10-06"]={date:"2026-10-06",imported:{channels:{CALL:55,EMAIL:90,WHATSAPP:5},topics:{"DEALERSHIP":34,"INCENTIVE":22,"MNP ISSUE":16,"INFO":15,"USER ISSUE (forward to CS team)":13,"OWNERSHIP":10,"REGISTER ISSUE":8,"ERECHARGE":8,"KPI":4,"VIP NUMBER":3,"CP58":3,"E-INVOICE":2,"BLACK":2,"AFFILIATE":2,"HIERARCHY":2,"DREG":1,"FRAUD":1,"LOGIN/ ONESYS":1,"SRP":1,"Esim":1,"ONEXAPP":1}},
-    notes:[{id:"a",topic:"DEALERSHIP",text:"Handled reactivation of demoted accounts; checked dealer status; and followed up on termination and related requests."},{id:"b",topic:"INCENTIVE",text:"Reviewed incentive status; checked RI and campaign incentive records; and followed up on payment and consent letter-related issues."}]};
-  S.teamDate="2026-10-06";S.logDate="2026-10-06";
-  const t0=todayISO();S.campaigns["example-1"]={name:"Example: Q4 Dealer Activation Booster",code:"EX-Q4-01",type:"Sales / activation",audience:["Dealer","AD","MD"],start:addDays(t0,-20),end:addDays(t0,5),override:"",mechanics:"Example only. Extra payout per new postpaid activation above monthly baseline.",eligibility:"Active dealers with no outstanding clawback.",reward:"RM5 per qualifying activation, paid with next incentive cycle.",target:"Minimum 20 activations in the period",pic:"Dealer Management",memoRef:"EX/MEMO/001",memoDate:addDays(t0,-25),memos:[],links:[],agentNotes:"If a dealer asks why the payout is missing, check the activation date falls inside the period first."};
-  S.campaigns["example-2"]={name:"Example: AD Recruitment Drive",code:"EX-AD-02",type:"Recruitment",audience:["AD"],start:addDays(t0,10),end:addDays(t0,40),override:"",memos:[],links:[]};
+  S.live=false;S.downloads=LOCAL_DOWNLOADS;
+  S.config=normConfig({roster:["Staff A","Staff B","Staff C","Staff D"].map(n=>({key:slug(n),name:n,role:"staff"}))});
+  S.allMembers=S.config.roster.map(r=>Object.assign({active:true},r));
+  const d=addDays(todayISO(),-1);const t={"staff-a":31,"staff-b":27,"staff-c":24,"staff-d":18};
+  for(const[k,v]of Object.entries(t))S.entries[eid(d,k)]={date:d,staff:k,total:v,channels:{},topics:{},notes:[]};
+  S.summaries[d]={date:d,imported:{channels:{CALL:36,EMAIL:58,WHATSAPP:6},topics:{"DEALERSHIP":30,"INCENTIVE":24,"MNP ISSUE":14,"INFO":12,"OWNERSHIP":9,"REGISTER ISSUE":6,"ERECHARGE":5}},
+    notes:[{id:"a",topic:"DEALERSHIP",text:"Demo note. Reactivated demoted dealer accounts and followed up on termination requests."}]};
+  S.teamDate=d;S.logDate=d;
+  const t0=todayISO();S.campaigns["example-1"]={name:"Example: Q4 Dealer Activation Booster",code:"EX-Q4-01",type:"Sales / activation",audience:["Dealer","AD","MD"],start:addDays(t0,-20),end:addDays(t0,5),override:"",mechanics:"Example only. Extra payout per new postpaid activation above monthly baseline.",eligibility:"Active dealers with no outstanding clawback.",reward:"Example reward.",target:"Minimum 20 activations in the period",pic:"Dealer Management",memoRef:"EX/MEMO/001",memoDate:addDays(t0,-25),memos:[],links:[],agentNotes:"Example note for support staff."};
   indexEntries();S.ready=true;
-  showBanner("Preview mode with example figures from 06 Oct. Changes here are not saved.");
+  showBanner("Demo mode: this copy isn’t connected to a database yet, so nothing is saved. Follow the README to connect Supabase and Microsoft sign-in.");
   renderAll();
 }
 function showBanner(t){const b=$("#banner");b.textContent=t;b.hidden=false}
+
+/* ---------- sign-in screens ---------- */
+function renderSignIn(){
+  put($("#tabs"));put($("#who"));
+  put($("#main"),h("div",{class:"welcome"},
+    h("h2",{text:"Sign in to DMT Daily Tracker"}),
+    h("p",{class:"muted",text:"Use your XOX Outlook (Microsoft 365) account. Your manager must have added your email to the team list."}),
+    h("button",{class:"btn primary",style:"margin-top:14px;padding:10px 18px",onclick:async e=>{e.currentTarget.disabled=true;
+      const {error}=await sb.auth.signInWithOAuth({provider:"azure",options:{scopes:"email openid profile",redirectTo:location.origin+location.pathname}});
+      if(error){toast("Couldn’t start sign-in: "+error.message);e.currentTarget.disabled=false}}},"Sign in with Microsoft")));
+}
+function renderNoAccess(){
+  put($("#tabs"));renderSignOutOnly();
+  put($("#main"),h("div",{class:"welcome"},
+    h("h2",{text:"You’re signed in, but not on the team list"}),
+    h("p",{class:"muted"},"Signed in as ",h("b",{text:S.meEmail||"(no email returned)"}),". Ask your manager to add this email under Team & topics, then reload this page."),
+    h("div",{style:"display:flex;gap:8px;margin-top:14px"},h("button",{class:"btn",onclick:()=>location.reload()},"Reload"),h("button",{class:"btn",onclick:()=>sb.auth.signOut()},"Sign out"))));
+}
+function renderProblem(msg,e){
+  put($("#tabs"));renderSignOutOnly();
+  put($("#main"),h("div",{class:"welcome"},h("h2",{text:"Something went wrong"}),h("p",{class:"muted",text:msg}),
+    e&&e.message?h("pre",{class:"report",style:"margin-top:12px",text:e.message}):null,
+    h("div",{style:"display:flex;gap:8px;margin-top:14px"},h("button",{class:"btn",onclick:()=>location.reload()},"Reload"),h("button",{class:"btn",onclick:()=>sb.auth.signOut()},"Sign out"))));
+}
+function renderSignOutOnly(){put($("#who"),h("button",{class:"btn small",onclick:()=>sb.auth.signOut()},"Sign out"))}
 
 /* ---------- shell ---------- */
 function tabsFor(role){
   if(role==="staff")return[["log","My day"],["dash","My report"],["camp","Campaigns"]];
   if(role==="supervisor")return[["team","Team report"],["dash","Dashboard"],["log","Log cases"],["camp","Campaigns"]];
-  if(role==="manager"){const t=[["dash","Dashboard"],["team","Team report"],["log","Log cases"],["camp","Campaigns"]];if(S.canEdit&&!S.viewAs)t.push(["settings","Team & topics"]);return t}
+  if(role==="manager"){const t=[["dash","Dashboard"],["team","Team report"],["log","Log cases"],["camp","Campaigns"]];if(realRole()==="manager"&&!S.viewAs)t.push(["settings","Team & topics"]);return t}
   return[];
 }
 function renderAll(){
   if(!S.ready)return;
   renderWho();
   const role=myRole();const main=$("#main");
-  if(!role){put($("#tabs"));return renderWelcome(main)}
+  if(!role){return renderNoAccess()}
   const tabs=tabsFor(role);
   if(!tabs.some(t=>t[0]===S.tab))S.tab=tabs[0][0];
   put($("#tabs"),tabs.map(([k,l])=>h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===k),onclick:()=>{if(S.tab===k)return;flushSave();S.noteEdit=null;S.noteDel=null;if(S.campEdit)cancelCampEdit();S.tab=k;renderAll()}},l)));
@@ -367,9 +477,10 @@ function renderAll(){
 }
 function renderWho(){
   const w=$("#who");const role=realRole();const k=myKey();
-  const name=(k&&nameOf(k))||S.meName||(S.live?"You":"Preview");
+  const name=(k&&nameOf(k))||S.meName||(S.live?"You":"Demo");
   put(w,S.meAvatar?h("img",{src:S.meAvatar,alt:""}):null,
-    h("div",{},h("div",{class:"nm",text:name}),role?h("span",{class:"pill",text:ROLES[role]}):h("span",{class:"pill plain",text:"Not set up"})));
+    h("div",{},h("div",{class:"nm",text:name}),role?h("span",{class:"pill",text:ROLES[role]}):h("span",{class:"pill plain",text:"Not set up"})),
+    S.live?h("button",{class:"btn small",onclick:()=>sb.auth.signOut()},"Sign out"):null);
   const va=$("#viewas-wrap");
   if(role==="manager"){va.hidden=false;const sel=$("#viewas");put(sel,
       h("option",{value:""},"Manager"),h("option",{value:"supervisor"},"Supervisor"),h("option",{value:"staff"},"Support staff"));
@@ -388,17 +499,6 @@ function onData(){
   else if(S.tab==="settings"){if(!focusedIn("#main"))renderSettings()}
 }
 
-/* ---------- welcome ---------- */
-function renderWelcome(main){
-  const wrap=h("div",{class:"welcome"});
-  if(!S.uid){wrap.append(h("h2",{text:"Sign in to use the tracker"}),h("p",{class:"muted",text:"Open this page while signed in to your organisation account so your cases are saved under your name."}));return put(main,wrap)}
-  const open=S.config.roster.filter(r=>!claimedBy(r.key));
-  wrap.append(h("h2",{text:"Who are you?"}),h("p",{class:"muted",text:"Pick your name once. Your role (support staff, supervisor or manager) comes from the team list your manager keeps."}));
-  if(!open.length)wrap.append(h("div",{class:"panel section-gap"},h("p",{text:"Your name isn’t on the team list yet. Ask your manager to add you under Team & topics, then reload this page."})));
-  else wrap.append(h("div",{class:"namegrid"},open.map(r=>h("button",{class:"btn",onclick:async(ev)=>{const b=ev.currentTarget;b.disabled=true;try{await S.db.doc("members/"+S.uid).set({staff:r.key,at:new Date().toISOString()});toast("Welcome, "+r.name)}catch(e){toast("Couldn’t save your name. Try again.");b.disabled=false}}},
-    h("div",{style:"font-weight:600",text:r.name}),h("div",{class:"label",text:ROLES[r.role]})))));
-  put(main,wrap);
-}
 
 /* ---------- ISSUE NOTES component ---------- */
 /* opts: scope, notes, canEdit, onSave(note) -> Promise, onDelete(id) -> Promise, rerender(), empty, extra(note), showMeta */
@@ -451,7 +551,7 @@ function noteItem(o,n){
 }
 function focusEditor(){setTimeout(()=>{const t=document.querySelector(".nedit textarea");if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length)}},0)}
 function upsert(list,note){const out=list.map(x=>Object.assign({},x));const i=out.findIndex(x=>x.id===note.id);
-  const stamp={at:new Date().toISOString(),by:S.uid||""};
+  const stamp={at:new Date().toISOString(),by:S.meKey||""};
   if(i>=0)out[i]=Object.assign(out[i],{topic:note.topic,text:note.text,edited:true},stamp);else out.push(Object.assign({id:note.id,topic:note.topic,text:note.text},stamp));return out}
 
 /* ---------- LOG ---------- */
@@ -535,10 +635,10 @@ async function saveForm(throwOnFail){
   const F=S.form;if(!F||!F.staff)return;
   const id=eid(F.date,F.staff);const c=sum(F.channels),t=sum(F.topics);
   const doc={date:F.date,staff:F.staff,channels:clone(F.channels),topics:clone(F.topics),notes:clone(F.notes),remarks:"",
-    total:c||t||F.legacyTotal||0,updatedBy:S.uid||"",updatedAt:new Date().toISOString()};
+    total:c||t||F.legacyTotal||0,updatedBy:S.meKey||"",updatedAt:new Date().toISOString()};
   F.updatedAt=doc.updatedAt;S.entries[id]=doc;indexEntries();S.dirty=false;
-  if(!S.live){setStatus("Saved "+timeNow()+" (preview only)");renderRecent();renderTeamMini();return}
-  try{await S.db.doc("entries/"+id).set(doc);setStatus("Saved "+timeNow())}
+  if(!S.live){setStatus("Saved "+timeNow()+" (demo only)");renderRecent();renderTeamMini();return}
+  try{await DB.saveEntry(id,doc);setStatus("Saved "+timeNow())}
   catch(e){S.dirty=true;setStatus(e&&e.code==="quota_exceeded"?"Storage is full. Ask your manager to clear old months.":"Couldn’t save. Check your connection; it will retry on your next change.",true);if(throwOnFail)throw e}
   renderRecent();renderTeamMini();
 }
@@ -615,9 +715,9 @@ function renderTeamTotals(a){
 function curTeamNotes(){return teamNotes(S.summaries[S.teamDate])}
 async function saveTeamNotes(notes){
   const date=S.teamDate;const sm=S.summaries[date]||{};
-  const doc={date,notes};if(sm.imported)doc.imported=clone(sm.imported);doc.updatedBy=S.uid||"";doc.updatedAt=new Date().toISOString();
+  const doc={date,notes};if(sm.imported)doc.imported=clone(sm.imported);doc.updatedBy=S.meKey||"";doc.updatedAt=new Date().toISOString();
   S.summaries[date]=doc;
-  if(S.live)await S.db.doc("summaries/"+date).set(doc);
+  if(S.live)await DB.saveSummary(doc);
 }
 function renderIssues(){
   const el=$("#team-issues");if(!el)return;
@@ -904,7 +1004,7 @@ function memoFiles(memos,editing){
 async function removeCampaign(c){
   S.campDel=null;
   try{
-    if(S.live)await S.db.doc("campaigns/"+c.id).delete();
+    if(S.live)await DB.deleteCampaign(c.id);
     delete S.campaigns[c.id];
     if(S.assets)for(const m of c.memos||[]){try{await S.assets.delete(m.id)}catch(e){}}
     toast("Campaign removed");
@@ -943,7 +1043,7 @@ function renderCampEditor(){
   const drop=S.assets?h("div",{class:"drop"},fileIn,
       h("div",{},"Drop memo files here or ",h("button",{type:"button",class:"linkbtn",style:"font-size:13px",onclick:()=>fileIn.click()},"choose files")),
       h("div",{class:"hint",style:"margin-top:4px",text:"PDF, PNG, JPG or WEBP, up to 20 MB each. For Word or Excel memos, save as PDF or add a link below."}))
-    :h("div",{class:"hint",text:S.live?"Uploading memo files needs edit access to this page. You can still add a link to the memo below.":"Memo upload works on the live page."});
+    :h("div",{class:"hint",text:S.live?"Uploading memo files needs supervisor or manager access. You can still add a link to the memo below.":"Memo upload works once the app is connected to Supabase (see README)."});
   if(S.assets){drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("over")});drop.addEventListener("dragleave",()=>drop.classList.remove("over"));
     drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("over");uploadMemos([...e.dataTransfer.files])})}
 
@@ -983,7 +1083,7 @@ async function uploadMemos(files){
     if(f.size>20*1048576){toast(f.name+" is over 20 MB");continue}
     if(st)st.textContent="Uploading "+f.name+"…";
     try{const r=await S.assets.upload(f,{type});
-      const m={id:r.id,name:f.name,type:r.contentType||type,size:r.sizeBytes||f.size,at:new Date().toISOString(),by:S.uid||""};
+      const m={id:r.id,name:f.name,type:r.contentType||type,size:r.sizeBytes||f.size,at:new Date().toISOString(),by:S.meKey||""};
       if(S.campEdit!==E){try{await S.assets.delete(r.id)}catch(e){}return}
       E.data.memos.push(m);E.uploaded.push(r.id);
     }catch(e){const c=e&&e.code;toast(c==="too_large"?f.name+" is too large":c==="unsupported_type"?f.name+": unsupported file type":c==="quota_or_state"?"File storage is full. Remove old memos first.":"Couldn’t upload "+f.name+". Try again.")}
@@ -1013,10 +1113,10 @@ async function saveCampaign(){
   const doc={name:D.name,code:(D.code||"").trim(),type:D.type||"",audience:AUD.filter(a=>D.audience.includes(a)),start:D.start,end:D.end,override:D.override||"",
     mechanics:D.mechanics||"",eligibility:D.eligibility||"",reward:D.reward||"",target:D.target||"",pic:D.pic||"",memoRef:(D.memoRef||"").trim(),memoDate:D.memoDate||"",
     memos:D.memos||[],links:D.links||[],agentNotes:D.agentNotes||"",
-    createdAt:D.createdAt||now,createdBy:D.createdBy||S.uid||"",updatedAt:now,updatedBy:S.uid||""};
+    createdAt:D.createdAt||now,createdBy:D.createdBy||S.meKey||"",updatedAt:now,updatedBy:S.meKey||""};
   E.busy=true;const b=$("#ce-save");if(b)b.disabled=true;
   try{
-    if(S.live)await S.db.doc("campaigns/"+id).set(doc);
+    if(S.live)await DB.saveCampaign(id,doc);
     S.campaigns[id]=doc;
     if(S.assets)for(const mid of E.removed){try{await S.assets.delete(mid)}catch(e){}}
     S.campEdit=null;S.campOpen=id;toast(E.id?"Campaign updated":"Campaign added");
@@ -1025,8 +1125,10 @@ async function saveCampaign(){
 }
 
 /* memo viewer + downloads */
-function openViewer(m){
-  const url="/_blob/"+m.id;
+/* memo viewer + downloads */
+async function openViewer(m){
+  let url;try{url=await memoUrl(m,false)}catch(e){return toast("Couldn’t open this memo. It may have been removed.")}
+  if(!url)return toast("Memo files open on the connected app only.");
   const body=/pdf/.test(m.type)?h("iframe",{src:url,title:m.name}):h("img",{src:url,alt:m.name});
   const close=()=>{ov.remove();document.removeEventListener("keydown",onKey)};
   const onKey=e=>{if(e.key==="Escape")close()};
@@ -1034,19 +1136,18 @@ function openViewer(m){
     h("div",{class:"modal-box"},
       h("div",{class:"modal-h"},h("span",{class:"t",text:m.name}),
         h("a",{class:"btn small",href:url,target:"_blank",rel:"noopener"},"Open in new tab"),
-        S.downloads?h("button",{class:"btn small",onclick:()=>downloadMemo(m)},"Download"):null,
+        h("button",{class:"btn small",onclick:()=>downloadMemo(m)},"Download"),
         h("button",{class:"btn small primary",onclick:close},"Close")),
       h("div",{class:"modal-b"},body)));
   document.body.append(ov);document.addEventListener("keydown",onKey);
   ov.querySelector(".btn.primary").focus();
 }
 async function downloadMemo(m){
-  if(!S.downloads)return;
-  try{const r=await fetch("/_blob/"+m.id);if(!r.ok)throw new Error("missing");const blob=await r.blob();
-    let name=m.name;if(!/\.(pdf|png|jpe?g|webp)$/i.test(name))name+=/pdf/.test(m.type)?".pdf":".png";
-    await S.downloads.save({filename:name,data:blob});toast("Saved "+name)}
-  catch(e){if(e&&e.code==="declined")return;toast(e&&e.message==="missing"?"This memo file is no longer available.":"Couldn’t download. Use Open in new tab instead.")}
+  try{const url=await memoUrl(m,true);if(!url)return toast("Memo files download on the connected app only.");
+    const a=h("a",{href:url,download:m.name});document.body.append(a);a.click();a.remove()}
+  catch(e){toast("Couldn’t download this memo. It may have been removed.")}
 }
+
 async function exportCampaigns(){
   const rows=[["Name","Code","Type","For","Start","End","Days","Status","Days left","Mechanics","Eligibility","Reward","Target / KPI","Person in charge","Memo ref","Memo date","Memo files","Links"]];
   campList().sort((a,b)=>String(a.end).localeCompare(String(b.end))).forEach(c=>{const st=campStatus(c);const left=c.end&&todayISO()<=c.end?daysBetween(todayISO(),c.end):"";
@@ -1068,35 +1169,39 @@ function renderCampMini(){
 }
 
 /* ---------- SETTINGS ---------- */
+/* ---------- SETTINGS ---------- */
 async function saveConfig(cfg,msg){
-  S.config=normConfig(cfg);
-  if(S.live){try{await S.db.doc("config/team").set({channels:S.config.channels,topics:S.config.topics,roster:S.config.roster,updatedAt:new Date().toISOString()});if(msg)toast(msg)}catch(e){toast("Couldn’t save the team list. You need edit access to this page.")}}
-  else if(msg)toast(msg+" (preview only)");
+  const prev=S.config;S.config=normConfig(cfg);
+  if(S.live){try{await DB.saveConfig(S.config);await DB.loadAll();if(msg)toast(msg)}
+    catch(e){S.config=prev;toast(/duplicate|unique/i.test(e.message||"")?"That email is already used by someone else on the list.":"Couldn’t save the team list: "+(e.message||"try again"))}}
+  else{S.allMembers=S.config.roster.map(r=>Object.assign({active:true},r));if(msg)toast(msg+" (demo only)")}
   renderAll();
 }
 function renderSettings(){
   const main=$("#main");const C=S.config;
   const rows=C.roster.map(r=>{
-    const u=claimedBy(r.key);
     const sel=h("select",{id:"role-"+r.key,"aria-label":"Role for "+r.name,onchange:e=>{const cfg=clone(C);cfg.roster.find(x=>x.key===r.key).role=e.target.value;saveConfig(cfg,r.name+" is now "+ROLES[e.target.value].toLowerCase())}},
       Object.entries(ROLES).map(([k,l])=>{const o=h("option",{value:k},l);if(k===r.role)o.selected=true;return o}));
-    const link=u?h("span",{style:"display:inline-flex;gap:6px;align-items:center"},h("span",{class:"pill good",text:u===S.uid?"Linked to you":"Linked"}),
-        S.live?h("button",{class:"btn small",onclick:async()=>{try{await S.db.doc("members/"+u).delete();toast(r.name+" unlinked")}catch(e){toast("Couldn’t unlink.")}}},"Unlink"):null)
-      :h("span",{style:"display:inline-flex;gap:6px;align-items:center"},h("span",{class:"pill plain",text:"Waiting to sign in"}),
-        S.live&&S.uid&&!myKey()?h("button",{class:"btn small",onclick:async()=>{try{await S.db.doc("members/"+S.uid).set({staff:r.key,at:new Date().toISOString()});toast("Linked "+r.name+" to you")}catch(e){toast("Couldn’t link.")}}},"This is me"):null);
+    const em=h("input",{type:"email",id:"email-"+r.key,value:r.email||"",placeholder:"name@xox.com.my","aria-label":"Outlook email for "+r.name,style:"width:100%;min-width:200px",
+      onchange:e=>{const v=e.target.value.trim().toLowerCase();if(v&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v))return toast("Enter a valid email address");const cfg=clone(C);cfg.roster.find(x=>x.key===r.key).email=v;saveConfig(cfg,v?"Email saved for "+r.name:"Email removed for "+r.name)}});
+    const isMe=r.key===S.meKey;
     const confirming=S.confirmRemove===r.key;
-    const rm=confirming?h("span",{style:"display:inline-flex;gap:6px"},h("button",{class:"btn small danger",onclick:()=>{S.confirmRemove=null;const cfg=clone(C);cfg.roster=cfg.roster.filter(x=>x.key!==r.key);saveConfig(cfg,r.name+" removed")}},"Remove"),h("button",{class:"btn small",onclick:()=>{S.confirmRemove=null;renderSettings()}},"Keep"))
+    const rm=isMe?h("span",{class:"pill good",text:"You"}):confirming?h("span",{style:"display:inline-flex;gap:6px"},h("button",{class:"btn small danger",onclick:()=>{S.confirmRemove=null;const cfg=clone(C);cfg.roster=cfg.roster.filter(x=>x.key!==r.key);saveConfig(cfg,r.name+" removed")}},"Remove"),h("button",{class:"btn small",onclick:()=>{S.confirmRemove=null;renderSettings()}},"Keep"))
       :h("button",{class:"btn small",onclick:()=>{S.confirmRemove=r.key;renderSettings()}},"Remove…");
-    return h("tr",{},h("td",{style:"font-weight:600",text:r.name}),h("td",{},sel),h("td",{},link),h("td",{style:"text-align:right"},rm));
+    return h("tr",{},h("td",{style:"font-weight:600",text:r.name}),h("td",{},em),h("td",{},sel),h("td",{style:"text-align:right"},rm));
   });
-  const nm=h("input",{type:"text",id:"new-name",placeholder:"Name as it appears in the report"});
+  const nm=h("input",{type:"text",id:"new-name",placeholder:"Name as it appears in the report",style:"flex:1 1 180px;min-width:0"});
+  const ne=h("input",{type:"email",id:"new-email",placeholder:"Outlook email",style:"flex:1 1 220px;min-width:0"});
   const nr=h("select",{id:"new-role","aria-label":"Role"},Object.entries(ROLES).map(([k,l])=>h("option",{value:k},l)));
-  const add=()=>{const n=nm.value.trim();if(!n)return nm.focus();let k=slug(n),i=2;while(C.roster.some(r=>r.key===k))k=slug(n)+"-"+(i++);const cfg=clone(C);cfg.roster.push({key:k,name:n,role:nr.value});saveConfig(cfg,n+" added")};
-  nm.addEventListener("keydown",e=>{if(e.key==="Enter")add()});
-  const team=h("div",{class:"panel"},h("div",{class:"panel-h"},h("h3",{text:"Team"}),h("span",{class:"muted",style:"font-size:12px",text:"Report order follows this list"})),
-    h("div",{class:"tbl-wrap"},h("table",{},h("thead",{},h("tr",{},h("th",{},"Name"),h("th",{},"Role"),h("th",{},"Account"),h("th",{},""))),h("tbody",{},rows))),
-    h("div",{style:"display:flex;flex-wrap:wrap;gap:8px;margin-top:14px"},nm,nr,h("button",{class:"btn primary",onclick:add},"Add person")),
-    h("p",{class:"muted",style:"font-size:12px;margin:12px 0 0",text:"Share this page with the team. Each person opens it once and picks their name; their role here decides what they see. Support staff log their own day and see their own report, supervisors also see the team report and dashboard, managers see everything."}));
+  const add=()=>{const n=nm.value.trim();if(!n)return nm.focus();const em=ne.value.trim().toLowerCase();
+    if(em&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ne.focus();return toast("Enter a valid email address")}
+    const all=(S.allMembers||[]).map(m=>m.key);let k=slug(n),i=2;while(all.includes(k)||C.roster.some(r=>r.key===k))k=slug(n)+"-"+(i++);
+    const cfg=clone(C);cfg.roster.push({key:k,name:n,role:nr.value,email:em});saveConfig(cfg,n+" added")};
+  [nm,ne].forEach(x=>x.addEventListener("keydown",e=>{if(e.key==="Enter")add()}));
+  const team=h("div",{class:"panel"},h("div",{class:"panel-h"},h("h3",{text:"Team and sign-in access"}),h("span",{class:"muted",style:"font-size:12px",text:"Report order follows this list"})),
+    h("div",{class:"tbl-wrap"},h("table",{},h("thead",{},h("tr",{},h("th",{},"Name"),h("th",{},"Outlook email (sign-in)"),h("th",{},"Role"),h("th",{},""))),h("tbody",{},rows))),
+    h("div",{style:"display:flex;flex-wrap:wrap;gap:8px;margin-top:14px"},nm,ne,nr,h("button",{class:"btn primary",onclick:add},"Add person")),
+    h("p",{class:"muted",style:"font-size:12px;margin:12px 0 0",text:"Only people on this list can sign in. Each person signs in with Microsoft using the email shown here; their role decides what they can see and change, and the database enforces it. Removing someone blocks their access straight away but keeps their past cases in the reports."}));
   const tpta=h("textarea",{id:"topics-ta",rows:"10"});tpta.value=C.topics.join("\n");
   const chta=h("textarea",{id:"channels-ta",rows:"4"});chta.value=C.channels.join("\n");
   const lists=h("div",{class:"panel"},h("div",{class:"panel-h"},h("h3",{text:"Topics and channels"}),h("span",{class:"muted",style:"font-size:12px",text:"One per line, spelled as in the report"})),
@@ -1107,4 +1212,7 @@ function renderSettings(){
 }
 
 boot();
+
 </script>
+</body>
+</html>
