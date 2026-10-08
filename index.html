@@ -256,7 +256,7 @@ input[type=email]{background:var(--surface);border:1px solid var(--line);border-
 <script>
 "use strict";
 const TOPICS_DEFAULT=["DEALERSHIP","INCENTIVE","MNP ISSUE","INFO","USER ISSUE (forward to CS team)","OWNERSHIP","REGISTER ISSUE","ERECHARGE","KPI","VIP NUMBER","CP58","E-INVOICE","BLACK","AFFILIATE","HIERARCHY","DREG","FRAUD","LOGIN/ ONESYS","SRP","Esim","ONEXAPP"];
-const CH_DEFAULT=["CALL","EMAIL","WHATSAPP","WALK-IN"];
+const CH_DEFAULT=["CALL","WHATSAPP","FACEBOOK","EMAIL","WALK-IN"];
 const ROLES={staff:"Support staff",supervisor:"Supervisor",manager:"Manager"};
 const DAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -267,7 +267,7 @@ const S={db:null,user:null,uid:null,isOwner:false,canEdit:false,meName:"",meAvat
   tab:null,viewAs:"",logDate:todayISO(),logStaff:null,teamDate:todayISO(),
   range:"30",from:null,to:null,dashStaff:"",
   form:null,formId:null,dirty:false,saveTimer:null,confirmRemove:null,
-  noteEdit:null,noteDel:null,allMembers:[],memberNames:{},meKey:null,meEmail:"",
+  noteEdit:null,noteDel:null,allMembers:[],memberNames:{},logs:[],logsLoaded:false,draft:null,logDel:null,dealerQ:"",dealerRows:null,recF:null,recRows:null,demoLogs:[],meKey:null,meEmail:"",
   campaigns:{},campEdit:null,campOpen:null,campDel:null,campF:{status:"active",q:"",aud:"",sort:"end"},assets:null,downloads:null};
 
 /* ---------- utils ---------- */
@@ -384,6 +384,41 @@ const DB={
     const data=Object.assign({},doc);delete data.updatedAt;delete data.updatedBy;
     const {error}=await sb.from("campaigns").upsert({id,data,updated_by:S.meKey,updated_at:doc.updatedAt});if(error)throw error;
   },
+  async loadLogs(date,staff){
+    if(!S.live)return S.demoLogs.filter(r=>r.date===date&&r.staff===staff).sort((a,b)=>b.logged_at.localeCompare(a.logged_at));
+    const {data,error}=await sb.from("crm_logs").select("*").eq("date",date).eq("staff",staff).order("logged_at",{ascending:false}).limit(1000);
+    if(error)throw error;return data||[];
+  },
+  async saveLog(row){
+    if(!S.live){let r=row.id&&S.demoLogs.find(x=>x.id===row.id);const old=r?{date:r.date,staff:r.staff}:null;
+      if(r)Object.assign(r,row);else{r=Object.assign({},row,{id:newId(),logged_at:new Date().toISOString()});S.demoLogs.push(r)}
+      demoRecompute(r.date,r.staff);if(old)demoRecompute(old.date,old.staff);return Object.assign({},r)}
+    const body={date:row.date,staff:row.staff,channel:row.channel,topic:row.topic,contact:row.contact,dealer_id:row.dealer_id,description:row.description,status:row.status,updated_by:S.meKey,updated_at:new Date().toISOString()};
+    const q=row.id?sb.from("crm_logs").update(body).eq("id",row.id):sb.from("crm_logs").insert(Object.assign({created_by:S.meKey},body));
+    const {data,error}=await q.select().single();if(error)throw error;return data;
+  },
+  async deleteLog(id){
+    if(!S.live){const r=S.demoLogs.find(x=>x.id===id);S.demoLogs=S.demoLogs.filter(x=>x.id!==id);if(r)demoRecompute(r.date,r.staff);return}
+    const {error}=await sb.from("crm_logs").delete().eq("id",id);if(error)throw error;
+  },
+  async dealerHistory(dealer){
+    if(!S.live)return S.demoLogs.filter(r=>r.dealer_id===dealer).sort((a,b)=>b.logged_at.localeCompare(a.logged_at)).slice(0,20);
+    const {data,error}=await sb.from("crm_logs").select("*").eq("dealer_id",dealer).order("logged_at",{ascending:false}).limit(20);
+    if(error)throw error;return data||[];
+  },
+  async searchLogs(F){
+    const q=String(F.q||"").trim().toLowerCase();
+    if(!S.live)return S.demoLogs.filter(r=>r.date>=F.from&&r.date<=F.to&&(!F.staff||r.staff===F.staff)&&(!F.channel||r.channel===F.channel)&&(!F.topic||r.topic===F.topic)&&(!F.status||r.status===F.status)
+      &&(!q||[r.contact,r.dealer_id,r.description].join(" ").toLowerCase().includes(q))).sort((a,b)=>(b.date+b.logged_at).localeCompare(a.date+a.logged_at));
+    let x=sb.from("crm_logs").select("*").gte("date",F.from).lte("date",F.to);
+    if(F.staff)x=x.eq("staff",F.staff);if(F.channel)x=x.eq("channel",F.channel);if(F.topic)x=x.eq("topic",F.topic);if(F.status)x=x.eq("status",F.status);
+    if(q){const t=q.replace(/[%,()*\\]/g," ").trim();if(t)x=x.or("contact.ilike.%"+t+"%,dealer_id.ilike.%"+t+"%,description.ilike.%"+t+"%")}
+    const {data,error}=await x.order("date",{ascending:false}).order("logged_at",{ascending:false}).limit(1000);
+    if(error)throw error;return data||[];
+  },
+  async saveEntryNotes(id,date,staff,notes,at){
+    const {error}=await sb.from("entries").upsert({id,date,staff,notes,updated_by:S.meKey,updated_at:at});if(error)throw error;
+  },
   async deleteCampaign(id){const {error}=await sb.from("campaigns").delete().eq("id",id);if(error)throw error},
   async saveConfig(cfg){
     const {error:e1}=await sb.from("settings").upsert({id:1,topics:cfg.topics,channels:cfg.channels,updated_at:new Date().toISOString()});if(e1)throw e1;
@@ -417,8 +452,14 @@ const LOCAL_DOWNLOADS={async save({filename,data}){
   const url=URL.createObjectURL(blob);const a=h("a",{href:url,download:filename});document.body.append(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),4000);return{status:"saved"}}};
 
+function demoRecompute(date,staff){
+  const rows=S.demoLogs.filter(r=>r.date===date&&r.staff===staff);const ch={},tp={};
+  rows.forEach(r=>{ch[r.channel]=(ch[r.channel]||0)+1;if(r.topic)tp[r.topic]=(tp[r.topic]||0)+1});
+  const id=eid(date,staff);const prev=S.entries[id]||{date,staff,notes:[]};
+  S.entries[id]=Object.assign({},prev,{channels:ch,topics:tp,total:rows.length,updatedBy:"crm-log",updatedAt:new Date().toISOString()});indexEntries();
+}
 function localMode(){
-  S.live=false;S.downloads=LOCAL_DOWNLOADS;
+  S.live=false;S.downloads=LOCAL_DOWNLOADS;S.demoLogs=[];
   S.config=normConfig({roster:["Staff A","Staff B","Staff C","Staff D"].map(n=>({key:slug(n),name:n,role:"staff"}))});
   S.allMembers=S.config.roster.map(r=>Object.assign({active:true},r));
   const d=addDays(todayISO(),-1);const t={"staff-a":31,"staff-b":27,"staff-c":24,"staff-d":18};
@@ -460,9 +501,9 @@ function renderSignOutOnly(){put($("#who"),h("button",{class:"btn small",onclick
 
 /* ---------- shell ---------- */
 function tabsFor(role){
-  if(role==="staff")return[["log","My day"],["dash","My report"],["camp","Campaigns"]];
-  if(role==="supervisor")return[["team","Team report"],["dash","Dashboard"],["log","Log cases"],["camp","Campaigns"]];
-  if(role==="manager"){const t=[["dash","Dashboard"],["team","Team report"],["log","Log cases"],["camp","Campaigns"]];if(realRole()==="manager"&&!S.viewAs)t.push(["settings","Team & topics"]);return t}
+  if(role==="staff")return[["log","CRM log"],["dash","My report"],["crm","My records"],["camp","Campaigns"]];
+  if(role==="supervisor")return[["team","Team report"],["dash","Dashboard"],["log","CRM log"],["crm","CRM records"],["camp","Campaigns"]];
+  if(role==="manager"){const t=[["dash","Dashboard"],["team","Team report"],["log","CRM log"],["crm","CRM records"],["camp","Campaigns"]];if(realRole()==="manager"&&!S.viewAs)t.push(["settings","Team & topics"]);return t}
   return[];
 }
 function renderAll(){
@@ -473,7 +514,7 @@ function renderAll(){
   const tabs=tabsFor(role);
   if(!tabs.some(t=>t[0]===S.tab))S.tab=tabs[0][0];
   put($("#tabs"),tabs.map(([k,l])=>h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===k),onclick:()=>{if(S.tab===k)return;flushSave();S.noteEdit=null;S.noteDel=null;if(S.campEdit)cancelCampEdit();S.tab=k;renderAll()}},l)));
-  ({log:renderLog,team:renderTeam,dash:renderDash,camp:renderCampaigns,settings:renderSettings})[S.tab]();
+  ({log:renderLog,team:renderTeam,dash:renderDash,crm:renderRecords,camp:renderCampaigns,settings:renderSettings})[S.tab]();
 }
 function renderWho(){
   const w=$("#who");const role=realRole();const k=myKey();
@@ -554,7 +595,19 @@ function upsert(list,note){const out=list.map(x=>Object.assign({},x));const i=ou
   const stamp={at:new Date().toISOString(),by:S.meKey||""};
   if(i>=0)out[i]=Object.assign(out[i],{topic:note.topic,text:note.text,edited:true},stamp);else out.push(Object.assign({id:note.id,topic:note.topic,text:note.text},stamp));return out}
 
-/* ---------- LOG ---------- */
+/* ---------- CRM LOG (replaces manual counters) ---------- */
+const CRM_STATUS=[["resolved","Resolved"],["follow-up","Follow-up needed"],["forwarded","Forwarded"]];
+function chanKind(c){c=String(c||"").toUpperCase();if(/WHATS|^WA$/.test(c))return"wa";if(/CALL|PHONE/.test(c))return"call";if(/MAIL/.test(c))return"email";if(/FACEBOOK|^FB$|MESSENGER/.test(c))return"fb";if(/WALK/.test(c))return"walkin";return"other"}
+function contactLabel(c){return{call:"Caller number",wa:"WhatsApp number",email:"Email address",fb:"Facebook name or profile link",walkin:"Visitor name or phone (optional)",other:"Contact"}[chanKind(c)]}
+function contactPlaceholder(c){return{call:"e.g. 012-345 6789",wa:"e.g. 6012-345 6789",email:"e.g. dealer@email.com",fb:"e.g. Ali Dealer Store or facebook.com/…",walkin:"Optional",other:""}[chanKind(c)]}
+function contactInputType(c){const k=chanKind(c);return k==="email"?"email":(k==="call"||k==="wa")?"tel":"text"}
+function normContact(c,v){v=String(v||"").trim();const k=chanKind(c);if(k==="call"||k==="wa")return v.replace(/[\s\-().]/g,"");if(k==="email")return v.toLowerCase();return v}
+function checkContact(c,v){const k=chanKind(c);if(k==="walkin"||k==="other")return"";if(!v)return contactLabel(c)+" is required";
+  if((k==="call"||k==="wa")&&!/^\+?\d{7,15}$/.test(v))return"Enter a valid phone number (digits only, 7–15)";
+  if(k==="email"&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v))return"Enter a valid email address";return""}
+function statusLabel(s){return(CRM_STATUS.find(x=>x[0]===s)||[0,"Resolved"])[1]}
+function timeOf(t){if(!t)return"";const d=new Date(t);return pad(d.getHours())+":"+pad(d.getMinutes())}
+
 function logStaffKey(){
   const role=myRole();
   if(role==="staff")return myKey()||(S.viewAs?(staffKeys()[0]||S.config.roster[0]?.key):null);
@@ -564,106 +617,208 @@ function logStaffKey(){
 function loadForm(){
   const key=logStaffKey();const id=key?eid(S.logDate,key):null;const e=id&&S.entries[id];
   S.formId=id;S.dirty=false;
-  S.form=e?{date:e.date,staff:e.staff,channels:clone(e.channels||{}),topics:clone(e.topics||{}),notes:clone(entryNotes(e)),updatedAt:e.updatedAt||null,legacyTotal:(!sum(e.channels)&&!sum(e.topics))?Number(e.total)||0:0}
-          :{date:S.logDate,staff:key,channels:{},topics:{},notes:[],updatedAt:null,legacyTotal:0};
+  S.form={date:S.logDate,staff:key,notes:clone(entryNotes(e)),updatedAt:e?.updatedAt||null};
+}
+function blankDraft(keep){const ch=S.config.channels;return{id:null,channel:keep?.channel&&ch.includes(keep.channel)?keep.channel:ch[0],topic:keep?.topic||"",contact:"",dealer:"",desc:"",status:"resolved"}}
+async function loadDayLogs(){
+  const key=logStaffKey();if(!key)return;const want=S.logDate+"|"+key;S.logsKey=want;
+  try{const rows=await DB.loadLogs(S.logDate,key);if(S.logsKey!==want)return;S.logs=rows;S.logsLoaded=true}catch(e){S.logsLoaded=true;toast("Couldn’t load the CRM log: "+(e.message||"try again"))}
+  renderLogList();updateTotals();
 }
 function renderLog(){
   const main=$("#main");const role=myRole();const key=logStaffKey();
   if(!key){put(main,h("div",{class:"empty",text:"Add your team under Team & topics before logging cases."}));return}
-  if(!S.form||S.formId!==eid(S.logDate,key))loadForm();
+  const id=eid(S.logDate,key);
+  if(!S.form||S.formId!==id){loadForm();S.logs=[];S.logsLoaded=false;S.draft=blankDraft(S.draft);loadDayLogs()}
+  if(!S.draft)S.draft=blankDraft();
+  const isToday=S.logDate===todayISO();
   const bar=h("div",{class:"bar"},
-    h("div",{class:"grow"},h("h2",{text:role==="staff"?"My cases":"Log cases"}),h("div",{class:"muted",text:fmtLong(S.logDate)})),
+    h("div",{class:"grow"},h("h2",{text:role==="staff"?"My CRM log":"CRM log"}),h("div",{class:"muted",text:fmtLong(S.logDate)+(isToday?"":" · back-dating")})),
     h("div",{class:"field"},h("label",{class:"label",for:"log-date"},"Date"),
-      h("input",{type:"date",id:"log-date",value:S.logDate,max:todayISO(),onchange:async e=>{if(!e.target.value)return;await flushSave();S.logDate=e.target.value;S.form=null;S.noteEdit=null;renderLog()}})),
+      h("input",{type:"date",id:"log-date",value:S.logDate,max:todayISO(),onchange:e=>{if(!e.target.value)return;S.logDate=e.target.value;S.form=null;S.noteEdit=null;S.draft=blankDraft(S.draft);renderLog()}})),
     role!=="staff"?h("div",{class:"field"},h("label",{class:"label",for:"log-staff"},"Staff"),
-      h("select",{id:"log-staff",onchange:async e=>{await flushSave();S.logStaff=e.target.value;S.form=null;S.noteEdit=null;renderLog()}},
+      h("select",{id:"log-staff",onchange:e=>{S.logStaff=e.target.value;S.form=null;S.noteEdit=null;S.draft=blankDraft(S.draft);renderLog()}},
         S.config.roster.map(r=>{const o=h("option",{value:r.key},r.name);if(r.key===key)o.selected=true;return o}))):null);
-  const chGrid=h("div",{class:"ch-grid"},S.config.channels.map((c,i)=>counter("channels",c,"c-ch-"+i,true)));
-  const tpGrid=h("div",{class:"ctr-grid"},S.config.topics.map((t,i)=>counter("topics",t,"c-tp-"+i,false)));
   const left=h("div",{class:"stack"},
-    h("div",{class:"panel"},
-      h("div",{class:"panel-h"},h("h3",{text:"By channel"}),h("span",{class:"muted",style:"font-size:12px",text:"Tap + as each case comes in. Saves automatically."})),
-      chGrid,
-      h("div",{class:"panel-h section-gap"},h("h3",{text:"By topic"})),
-      tpGrid,
-      h("div",{class:"totalbar",id:"log-totals"})),
+    h("div",{class:"panel",id:"log-form"}),
+    h("div",{class:"panel"},h("div",{class:"panel-h"},h("h3",{id:"log-list-h",text:"Contacts logged"}),h("span",{class:"hint",text:"Daily totals and the dashboard update automatically"})),
+      h("div",{class:"totalbar",id:"log-totals",style:"margin:0 0 12px"}),h("div",{id:"log-list"})),
     h("div",{class:"panel",id:"log-notes"}));
-  const right=h("div",{class:"stack"},h("div",{class:"panel",id:"log-camps"}),h("div",{class:"panel",id:"log-recent"}),h("div",{class:"panel",id:"log-teamday"}));
+  const right=h("div",{class:"stack"},h("div",{class:"panel",id:"log-dealer"}),h("div",{class:"panel",id:"log-camps"}),h("div",{class:"panel",id:"log-recent"}),h("div",{class:"panel",id:"log-teamday"}));
   put(main,bar,h("div",{class:"grid2"},left,right));
-  updateTotals();renderLogNotes();renderRecent();renderCampMini();renderTeamMini();
+  renderLogForm();renderLogList();updateTotals();renderLogNotes();renderDealerPanel();renderRecent();renderCampMini();renderTeamMini();
+}
+function renderLogForm(){
+  const el=$("#log-form");if(!el)return;const D=S.draft;const editing=!!D.id;
+  const chBtns=h("div",{class:"chips",role:"radiogroup","aria-label":"Channel"},S.config.channels.map(c=>h("button",{type:"button",class:"chip",role:"radio","aria-checked":String(D.channel===c),"aria-pressed":String(D.channel===c),onclick:()=>{D.channel=c;renderLogForm();$("#crm-contact")?.focus()}},c)));
+  const tp=h("select",{id:"crm-topic",onchange:e=>D.topic=e.target.value},h("option",{value:""},"Choose a topic…"),S.config.topics.map(t=>h("option",{value:t},t)));tp.value=D.topic||"";
+  const contact=h("input",{type:contactInputType(D.channel),id:"crm-contact",value:D.contact,placeholder:contactPlaceholder(D.channel),autocomplete:"off",oninput:e=>D.contact=e.target.value});
+  const dealer=h("input",{type:"text",id:"crm-dealer",value:D.dealer,placeholder:"e.g. D123456",autocomplete:"off",oninput:e=>D.dealer=e.target.value,onchange:()=>lookupDealer(D.dealer)});
+  const desc=h("textarea",{id:"crm-desc",rows:"3",placeholder:"What the dealer asked and what you did",oninput:e=>D.desc=e.target.value});desc.value=D.desc;
+  const st=h("div",{class:"chips",role:"radiogroup","aria-label":"Status"},CRM_STATUS.map(([k,l])=>h("button",{type:"button",class:"chip",role:"radio","aria-checked":String(D.status===k),"aria-pressed":String(D.status===k),onclick:()=>{D.status=k;renderLogForm()}},l)));
+  const err=h("div",{class:"hint",id:"crm-err",style:"color:var(--bad)"});
+  const save=h("button",{class:"btn primary",id:"crm-save",onclick:saveLog},editing?"Save changes":"Log contact");
+  [contact,dealer].forEach(i=>i.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();saveLog()}}));
+  desc.addEventListener("keydown",e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();saveLog()}});
+  put(el,h("div",{class:"panel-h"},h("h3",{text:editing?"Edit contact":"New contact"}),h("span",{class:"hint",text:"Enter saves · Ctrl+Enter in the description"})),
+    h("div",{class:"form"},
+      h("div",{class:"field full"},h("span",{class:"label",text:"Channel"}),chBtns),
+      h("div",{class:"field"},h("label",{class:"label",for:"crm-topic"},"Topic"),tp),
+      h("div",{class:"field"},h("label",{class:"label",for:"crm-contact"},contactLabel(D.channel)),contact),
+      h("div",{class:"field"},h("label",{class:"label",for:"crm-dealer"},"Dealer ID"),dealer),
+      h("div",{class:"field"},h("span",{class:"label",text:"Status"}),st),
+      h("div",{class:"field full"},h("label",{class:"label",for:"crm-desc"},"Call description"),desc)),
+    err,
+    h("div",{class:"camp-acts"},save,editing?h("button",{class:"btn",onclick:()=>{S.draft=blankDraft(D);renderLogForm()}},"Cancel edit"):null));
+}
+async function saveLog(){
+  const D=S.draft;const errEl=$("#crm-err");const fail=(m,f)=>{if(errEl)errEl.textContent=m;if(f)$(f)?.focus();return false};
+  const contact=normContact(D.channel,D.contact);
+  if(!D.channel)return fail("Choose a channel");
+  if(!D.topic)return fail("Choose a topic","#crm-topic");
+  const ce=checkContact(D.channel,contact);if(ce)return fail(ce,"#crm-contact");
+  if(!D.desc.trim())return fail("Add a short description","#crm-desc");
+  if(errEl)errEl.textContent="";
+  const key=logStaffKey();
+  const row={id:D.id||undefined,date:S.logDate,staff:key,channel:D.channel,topic:D.topic,contact,dealer_id:D.dealer.trim().toUpperCase(),description:D.desc.trim(),status:D.status||"resolved"};
+  const b=$("#crm-save");if(b)b.disabled=true;
+  try{const saved=await DB.saveLog(row);
+    const i=S.logs.findIndex(x=>x.id===saved.id);if(i>=0)S.logs[i]=saved;else S.logs.unshift(saved);
+    toast(D.id?"Contact updated":"Contact logged");
+    S.draft=blankDraft(D);renderLogForm();renderLogList();updateTotals();
+    setTimeout(()=>$("#crm-contact")?.focus(),0);
+    if(!S.live){renderRecent();renderTeamMini()}else scheduleReload();
+  }catch(e){if(b)b.disabled=false;fail("Couldn’t save: "+(e.message||"check your connection and try again"))}
+}
+function renderLogList(){
+  const el=$("#log-list");if(!el)return;
+  const h3=$("#log-list-h");if(h3)h3.textContent="Contacts logged ("+S.logs.length+")";
+  if(!S.logsLoaded){put(el,h("div",{class:"muted",text:"Loading…"}));return}
+  if(!S.logs.length){put(el,h("div",{class:"muted",style:"font-size:13px",text:"No contacts logged for this day yet. Each contact you log is counted in the daily totals and the dashboard straight away."}));return}
+  put(el,h("div",{class:"tbl-wrap"},h("table",{},
+    h("thead",{},h("tr",{},h("th",{},"Time"),h("th",{},"Channel"),h("th",{},"Topic"),h("th",{},"Contact"),h("th",{},"Dealer ID"),h("th",{},"Description"),h("th",{},"Status"),h("th",{},""))),
+    h("tbody",{},S.logs.map(r=>{const confirming=S.logDel===r.id;
+      return h("tr",{},h("td",{class:"mono",text:timeOf(r.logged_at)}),h("td",{},h("span",{class:"pill plain",text:r.channel})),h("td",{style:"font-size:12px",text:r.topic}),
+        h("td",{class:"mono",style:"font-size:12px;min-width:120px;overflow-wrap:anywhere",text:r.contact||"–"}),
+        h("td",{class:"mono",style:"font-size:12px"},r.dealer_id?h("button",{class:"linkbtn",onclick:()=>lookupDealer(r.dealer_id)},r.dealer_id):"–"),
+        h("td",{style:"min-width:200px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px",text:r.description}),
+        h("td",{},h("span",{class:"pill "+(r.status==="follow-up"?"warn":r.status==="forwarded"?"info":"good"),text:statusLabel(r.status)})),
+        h("td",{style:"white-space:nowrap;text-align:right"},confirming?[h("button",{class:"btn small danger",onclick:()=>deleteLog(r)},"Delete"),h("button",{class:"btn small",onclick:()=>{S.logDel=null;renderLogList()}},"Keep")]
+          :[h("button",{class:"btn small",onclick:()=>{S.draft={id:r.id,channel:r.channel,topic:r.topic,contact:r.contact||"",dealer:r.dealer_id||"",desc:r.description||"",status:r.status||"resolved"};S.logDel=null;renderLogForm();$("#log-form").scrollIntoView({behavior:"smooth",block:"start"})}},"Edit"),
+            h("button",{class:"btn small",onclick:()=>{S.logDel=r.id;renderLogList()}},"Delete…")]))})))));
+}
+async function deleteLog(r){
+  S.logDel=null;
+  try{await DB.deleteLog(r.id);S.logs=S.logs.filter(x=>x.id!==r.id);if(S.draft?.id===r.id)S.draft=blankDraft(S.draft);toast("Contact deleted");renderLogForm();if(!S.live){renderRecent();renderTeamMini()}else scheduleReload()}
+  catch(e){toast("Couldn’t delete: "+(e.message||"try again"))}
+  renderLogList();updateTotals();
+}
+function updateTotals(){
+  const el=$("#log-totals");if(!el)return;
+  const ch={},tp={};S.logs.forEach(r=>{ch[r.channel]=(ch[r.channel]||0)+1;tp[r.topic]=(tp[r.topic]||0)+1});
+  const fu=S.logs.filter(r=>r.status==="follow-up").length;
+  const e=S.entries[S.formId];const legacy=!S.logs.length&&e&&entryTotal(e)?entryTotal(e):0;
+  put(el,h("div",{},h("div",{class:"label",text:"Total contacts"}),h("div",{class:"big",text:String(S.logs.length||legacy)})),
+    h("div",{style:"display:flex;flex-wrap:wrap;gap:6px"},S.config.channels.map((c,i)=>h("span",{class:"pill plain",style:ch[c]?"color:"+swatch(i):"",text:c+" "+(ch[c]||0)}))),
+    fu?h("span",{class:"pill warn",text:fu+" need follow-up"}):null,
+    legacy?h("span",{class:"pill plain",text:"Counted before the CRM log started"}):null);
+}
+async function lookupDealer(id){
+  id=String(id||"").trim().toUpperCase();S.dealerQ=id;S.dealerRows=null;renderDealerPanel();
+  if(!id)return;
+  try{const rows=await DB.dealerHistory(id);if(S.dealerQ!==id)return;S.dealerRows=rows}catch(e){S.dealerRows=[]}
+  renderDealerPanel();
+}
+function renderDealerPanel(){
+  const el=$("#log-dealer");if(!el)return;
+  const inp=h("input",{type:"search",id:"dealer-q",placeholder:"Dealer ID",value:S.dealerQ||"",style:"flex:1;min-width:0",onkeydown:e=>{if(e.key==="Enter")lookupDealer(e.target.value)}});
+  const head=[h("div",{class:"panel-h"},h("h3",{text:"Dealer history"})),h("div",{style:"display:flex;gap:6px;margin-bottom:10px"},inp,h("button",{class:"btn small",onclick:()=>lookupDealer(inp.value)},"Look up"))];
+  if(!S.dealerQ)return put(el,head,h("div",{class:"hint",text:"Type a dealer ID in the form or here to see their recent contacts with the desk."}));
+  if(S.dealerRows==null)return put(el,head,h("div",{class:"muted",text:"Looking up "+S.dealerQ+"…"}));
+  if(!S.dealerRows.length)return put(el,head,h("div",{class:"muted",style:"font-size:13px",text:"No earlier contacts from "+S.dealerQ+"."}));
+  put(el,head,h("div",{class:"hint",style:"margin-bottom:6px",text:S.dealerRows.length+(S.dealerRows.length>=20?"+":"")+" contact"+(S.dealerRows.length===1?"":"s")+" from "+S.dealerQ}),
+    h("div",{class:"notes"},S.dealerRows.slice(0,8).map(r=>h("div",{class:"nitem"},h("span",{class:"pill plain",text:r.channel}),h("div",{class:"tx",text:r.topic+": "+r.description}),
+      h("div",{class:"meta",text:fmtDay(r.date)+" "+timeOf(r.logged_at)+" · "+nameOf(r.staff)+" · "+statusLabel(r.status)})))));
 }
 function renderLogNotes(){
   const el=$("#log-notes");if(!el||!S.form)return;const F=S.form;
-  const top=Object.entries(F.topics).sort((a,b)=>b[1]-a[1])[0];
+  const tc={};S.logs.forEach(r=>tc[r.topic]=(tc[r.topic]||0)+1);const top=Object.entries(tc).sort((a,b)=>b[1]-a[1])[0];
   put(el,h("div",{class:"panel-h"},h("h3",{text:"Issue notes"}),h("span",{class:"muted",style:"font-size:12px",text:F.notes.length?F.notes.length+" note"+(F.notes.length===1?"":"s")+" for the daily report":"Your supervisor uses these for the ISSUE section"})),
     noteList({scope:"log:"+S.formId,notes:F.notes,canEdit:true,defaultTopic:top?top[0]:"",empty:"No issue notes yet. Add one for anything worth flagging today, for example a dealer escalation or a system problem.",
       rerender:renderLogNotes,
-      onSave:async note=>{F.notes=upsert(F.notes,note);await saveForm(true);toast("Note saved")},
-      onDelete:async id=>{F.notes=F.notes.filter(n=>n.id!==id);await saveForm(true)}}));
+      onSave:async note=>{F.notes=upsert(F.notes,note);await saveNotes();toast("Note saved")},
+      onDelete:async id=>{F.notes=F.notes.filter(n=>n.id!==id);await saveNotes()}}));
 }
-function counter(kind,name,id,big){
-  const F=S.form;const v=Number(F[kind][name])||0;
-  const inp=h("input",{type:"number",min:"0",inputmode:"numeric",id,value:String(v),"aria-label":name,oninput:e=>setCount(kind,name,e.target.value,row)});
-  const row=h("div",{class:"ctr"+(big?" big":"")+(v?" has":"")},
-    h("span",{class:"nm",text:name}),
-    h("button",{type:"button","aria-label":"One less "+name,onclick:()=>{const n=Math.max(0,(Number(F[kind][name])||0)-1);inp.value=n;setCount(kind,name,n,row)}},"−"),
-    inp,
-    h("button",{type:"button","aria-label":"One more "+name,onclick:()=>{const n=(Number(F[kind][name])||0)+1;inp.value=n;setCount(kind,name,n,row)}},"+"));
-  return row;
+async function saveNotes(){
+  const F=S.form;if(!F||!F.staff)return;const id=eid(F.date,F.staff);const now=new Date().toISOString();
+  const prev=S.entries[id]||{date:F.date,staff:F.staff,channels:{},topics:{},total:0};
+  S.entries[id]=Object.assign({},prev,{notes:clone(F.notes),updatedAt:now});indexEntries();F.updatedAt=now;
+  if(S.live)await DB.saveEntryNotes(id,F.date,F.staff,F.notes,now);
 }
-function setCount(kind,name,val,row){
-  const n=Math.max(0,Math.floor(Number(val)||0));
-  if(n)S.form[kind][name]=n;else delete S.form[kind][name];
-  row.classList.toggle("has",!!n);updateTotals();scheduleSave();
-}
-function updateTotals(){
-  const el=$("#log-totals");if(!el)return;const F=S.form;
-  const c=sum(F.channels),t=sum(F.topics);const total=c||t||F.legacyTotal;
-  const kids=[h("div",{},h("div",{class:"label",text:"Total cases"}),h("div",{class:"big",text:String(total)})),
-    h("div",{class:"mono",style:"font-size:13px"},"Channels "+c+" · Topics "+t)];
-  if(c&&t&&c!==t)kids.push(h("span",{class:"pill warn",text:(c>t?"Tag "+(c-t)+" more by topic":"Topics exceed channels by "+(t-c))}));
-  else if(c&&t)kids.push(h("span",{class:"pill good",text:"Balanced"}));
-  if(F.legacyTotal&&!c&&!t)kids.push(h("span",{class:"pill plain",text:"Total only, no breakdown"}));
-  kids.push(h("span",{class:"status",id:"save-status",text:S.dirty?"Saving…":(F.updatedAt?"Saved":"Not logged yet")}));
-  put(el,kids);
-}
-function setStatus(t,err){const s=$("#save-status");if(s){s.textContent=t;s.classList.toggle("err",!!err)}}
-function scheduleSave(){S.dirty=true;setStatus("Saving…");clearTimeout(S.saveTimer);S.saveTimer=setTimeout(()=>saveForm(),900)}
-async function flushSave(){if(S.dirty){clearTimeout(S.saveTimer);await saveForm()}}
-async function saveForm(throwOnFail){
-  clearTimeout(S.saveTimer);
-  const F=S.form;if(!F||!F.staff)return;
-  const id=eid(F.date,F.staff);const c=sum(F.channels),t=sum(F.topics);
-  const doc={date:F.date,staff:F.staff,channels:clone(F.channels),topics:clone(F.topics),notes:clone(F.notes),remarks:"",
-    total:c||t||F.legacyTotal||0,updatedBy:S.meKey||"",updatedAt:new Date().toISOString()};
-  F.updatedAt=doc.updatedAt;S.entries[id]=doc;indexEntries();S.dirty=false;
-  if(!S.live){setStatus("Saved "+timeNow()+" (demo only)");renderRecent();renderTeamMini();return}
-  try{await DB.saveEntry(id,doc);setStatus("Saved "+timeNow())}
-  catch(e){S.dirty=true;setStatus(e&&e.code==="quota_exceeded"?"Storage is full. Ask your manager to clear old months.":"Couldn’t save. Check your connection; it will retry on your next change.",true);if(throwOnFail)throw e}
-  renderRecent();renderTeamMini();
-}
+async function flushSave(){}
 function refreshLog(){
   const key=logStaffKey();
   if(!S.form||S.formId!==(key&&eid(S.logDate,key)))return renderLog();
   const e=S.entries[S.formId];
-  if(!S.dirty&&!S.noteEdit&&!focusedIn("#main")&&e&&e.updatedAt!==S.form.updatedAt){S.form=null;return renderLog()}
+  if(!S.noteEdit&&!focusedIn("#log-notes")&&e&&JSON.stringify(entryNotes(e))!==JSON.stringify(S.form.notes)){S.form.notes=clone(entryNotes(e));renderLogNotes()}
+  if(!S.draft?.id&&!focusedIn("#log-form"))loadDayLogs();
   renderRecent();renderCampMini();renderTeamMini();
 }
 function renderRecent(){
   const el=$("#log-recent");if(!el||!S.form)return;const key=S.form.staff;
   const days=[];for(let i=0;i<7;i++)days.push(addDays(todayISO(),-i));
   const vals=days.map(d=>entryTotal(S.entries[eid(d,key)]));const max=Math.max(1,...vals);
-  put(el,h("div",{class:"panel-h"},h("h3",{text:(myRole()==="staff"?"Your":nameOf(key)+"’s")+" last 7 days"}),h("span",{class:"mono muted",text:sum(vals)+" cases"})),
+  put(el,h("div",{class:"panel-h"},h("h3",{text:(myRole()==="staff"?"Your":nameOf(key)+"’s")+" last 7 days"}),h("span",{class:"mono muted",text:sum(vals)+" contacts"})),
     h("div",{class:"rows"},days.map((d,i)=>h("div",{class:"row"},
-      h("button",{class:"nm",style:"background:none;border:0;padding:0;text-align:left;cursor:pointer;color:inherit"+(d===S.logDate?";font-weight:600":""),onclick:async()=>{await flushSave();S.logDate=d;S.form=null;S.noteEdit=null;renderLog()}},fmtDay(d)),
+      h("button",{class:"nm",style:"background:none;border:0;padding:0;text-align:left;cursor:pointer;color:inherit"+(d===S.logDate?";font-weight:600":""),onclick:()=>{S.logDate=d;S.form=null;S.noteEdit=null;renderLog()}},fmtDay(d)),
       h("div",{class:"hbar"},h("i",{style:"width:"+(vals[i]/max*100)+"%"})),
       h("span",{class:"v",text:vals[i]?String(vals[i]):"–"})))));
 }
 function renderTeamMini(){
   const el=$("#log-teamday");if(!el)return;const a=dayAgg(S.logDate);
   const keys=staffKeys();const logged=keys.filter(k=>a.byStaff[k]).length;
-  put(el,h("div",{class:"panel-h"},h("h3",{text:"Team on "+fmtShort(S.logDate)}),h("span",{class:"mono",text:a.total+" cases"})),
+  put(el,h("div",{class:"panel-h"},h("h3",{text:"Team on "+fmtShort(S.logDate)}),h("span",{class:"mono",text:a.total+" contacts"})),
     h("div",{class:"muted",style:"font-size:13px",text:logged+" of "+keys.length+" staff have logged"}));
+}
+
+/* ---------- CRM RECORDS (search & export) ---------- */
+function renderRecords(){
+  const main=$("#main");const F=S.recF||(S.recF={from:addDays(todayISO(),-6),to:todayISO(),staff:"",channel:"",topic:"",status:"",q:""});
+  const role=myRole();if(role==="staff")F.staff=myKey()||"";
+  const sel=(id,label,val,opts,onch)=>{const s=h("select",{id,"aria-label":label,onchange:e=>{onch(e.target.value);runRecords()}},opts.map(([v,l])=>h("option",{value:v},l)));s.value=val;return h("div",{class:"field"},h("label",{class:"label",for:id},label),s)};
+  const filters=h("div",{class:"filters"},
+    h("div",{class:"field"},h("label",{class:"label",for:"rec-from"},"From"),h("input",{type:"date",id:"rec-from",value:F.from,max:todayISO(),onchange:e=>{F.from=e.target.value;runRecords()}})),
+    h("div",{class:"field"},h("label",{class:"label",for:"rec-to"},"To"),h("input",{type:"date",id:"rec-to",value:F.to,max:todayISO(),onchange:e=>{F.to=e.target.value;runRecords()}})),
+    role==="staff"?null:sel("rec-staff","Staff",F.staff,[["","All staff"],...S.config.roster.map(r=>[r.key,r.name])],v=>F.staff=v),
+    sel("rec-channel","Channel",F.channel,[["","All channels"],...S.config.channels.map(c=>[c,c])],v=>F.channel=v),
+    sel("rec-topic","Topic",F.topic,[["","All topics"],...S.config.topics.map(t=>[t,t])],v=>F.topic=v),
+    sel("rec-status","Status",F.status,[["","Any status"],...CRM_STATUS],v=>F.status=v),
+    h("div",{class:"field",style:"flex:1 1 200px"},h("label",{class:"label",for:"rec-q"},"Search"),h("input",{type:"search",id:"rec-q",value:F.q,placeholder:"Number, email, dealer ID or words",onkeydown:e=>{if(e.key==="Enter"){F.q=e.target.value;runRecords()}},onchange:e=>{F.q=e.target.value;runRecords()}})));
+  put(main,h("div",{class:"bar"},h("div",{class:"grow"},h("h2",{text:"CRM records"}),h("div",{class:"muted",text:"Every contact logged by the desk, searchable and exportable"})),
+      h("button",{class:"btn",onclick:exportRecords},"Export CSV")),
+    filters,h("div",{class:"panel",id:"rec-out"},h("div",{class:"muted",text:"Loading…"})));
+  runRecords();
+}
+async function runRecords(){
+  const el=$("#rec-out");if(!el)return;const F=S.recF;if(F.from>F.to){const t=F.from;F.from=F.to;F.to=t}
+  put(el,h("div",{class:"muted",text:"Loading…"}));
+  try{const rows=await DB.searchLogs(F);S.recRows=rows;
+    const fu=rows.filter(r=>r.status==="follow-up").length;
+    put(el,h("div",{class:"panel-h"},h("h3",{text:rows.length+(rows.length>=1000?"+":"")+" contact"+(rows.length===1?"":"s")}),fu?h("span",{class:"pill warn",text:fu+" need follow-up"}):null),
+      rows.length?h("div",{class:"tbl-wrap"},h("table",{},h("thead",{},h("tr",{},h("th",{},"Date"),h("th",{},"Time"),h("th",{},"Staff"),h("th",{},"Channel"),h("th",{},"Topic"),h("th",{},"Contact"),h("th",{},"Dealer ID"),h("th",{},"Description"),h("th",{},"Status"))),
+        h("tbody",{},rows.slice(0,500).map(r=>h("tr",{},h("td",{style:"white-space:nowrap",text:fmtDay(r.date)}),h("td",{class:"mono",text:timeOf(r.logged_at)}),h("td",{text:nameOf(r.staff)}),h("td",{},h("span",{class:"pill plain",text:r.channel})),h("td",{style:"font-size:12px",text:r.topic}),
+          h("td",{class:"mono",style:"font-size:12px;min-width:120px;overflow-wrap:anywhere",text:r.contact||"–"}),h("td",{class:"mono",style:"font-size:12px",text:r.dealer_id||"–"}),
+          h("td",{style:"min-width:220px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px",text:r.description}),
+          h("td",{},h("span",{class:"pill "+(r.status==="follow-up"?"warn":r.status==="forwarded"?"info":"good"),text:statusLabel(r.status)}))))))):h("div",{class:"muted",text:"No contacts match these filters."}),
+      rows.length>500?h("div",{class:"hint",style:"margin-top:8px",text:"Showing the latest 500 here. Export CSV includes up to 1,000; narrow the dates for more."}):null)}
+  catch(e){put(el,h("div",{class:"muted",text:"Couldn’t load records: "+(e.message||"try again")}))}
+}
+async function exportRecords(){
+  const rows=S.recRows||[];if(!rows.length)return toast("Nothing to export for these filters");
+  const head=["Date","Time","Staff","Channel","Topic","Contact","Dealer ID","Description","Status"];
+  const csv=[head,...rows.map(r=>[r.date,timeOf(r.logged_at),nameOf(r.staff),r.channel,r.topic,r.contact,r.dealer_id,r.description,statusLabel(r.status)])]
+    .map(r=>r.map(v=>{v=v==null?"":String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(",")).join("\r\n");
+  await S.downloads.save({filename:"dmt-crm-log-"+S.recF.from+"-to-"+S.recF.to+".csv",data:"﻿"+csv});toast("CSV saved");
 }
 
 /* ---------- TEAM REPORT ---------- */
@@ -811,7 +966,7 @@ function renderDash(){
     who&&role!=="staff"?h("button",{class:"btn small",onclick:()=>{S.dashStaff="";renderDash()}},"← Back to team view"):null);
 
   const notesPanel=renderDashNotes(dates,who);
-  if(!R.total){put(main,filters,head,h("div",{class:"panel empty",text:who?nameOf(who)+" has no cases logged in this range.":"No cases logged in this range yet. Staff log their day under My day; figures appear here as they save."}),notesPanel?h("div",{class:"section-gap"},notesPanel):null);return}
+  if(!R.total){put(main,filters,head,h("div",{class:"panel empty",text:who?nameOf(who)+" has no cases logged in this range.":"No cases logged in this range yet. Staff log each contact in the CRM log; figures appear here as they save."}),notesPanel?h("div",{class:"section-gap"},notesPanel):null);return}
 
   const avg=R.active.length?(R.total/R.active.length):0;
   const peak=R.days.reduce((m,d)=>d.total>m.total?d:m,R.days[0]);

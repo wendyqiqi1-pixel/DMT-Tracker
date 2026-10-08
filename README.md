@@ -1,6 +1,6 @@
 # DMT Daily Tracker
 
-Daily case tracker for the DMT support desk. Staff log their cases by channel and topic as they work. Supervisors compile the WhatsApp **DAILY REPORT**, managers watch the dashboard, and everyone can look up live dealer campaigns.
+Daily case tracker for the DMT support desk. Staff log every dealer contact in the CRM log as they work, and the daily totals, team report and dashboard update automatically. Supervisors compile the WhatsApp **DAILY REPORT**, managers watch the dashboard, and everyone can look up live dealer campaigns.
 
 Sign-in uses **Microsoft 365 (Outlook) accounts**. Data and memo files are stored in **Supabase**. The app itself is a single static page, so any static host can serve it.
 
@@ -8,7 +8,8 @@ Sign-in uses **Microsoft 365 (Outlook) accounts**. Data and memo files are store
 
 | Tab | Who sees it | What it does |
 | --- | --- | --- |
-| My day / Log cases | Everyone | Count cases by channel (Call, Email, WhatsApp, Walk-in) and topic with + / − buttons; add issue notes, which can be edited and deleted. Saves automatically. |
+| CRM log | Everyone | Log each contact: channel (Call, WhatsApp, Facebook, Email, Walk-in), topic, caller number / WhatsApp number / email / Facebook name, dealer ID, description and status (Resolved, Follow-up needed, Forwarded). Edit or delete entries; look up a dealer's earlier contacts; add issue notes for the daily report. |
+| CRM records / My records | Everyone (staff see their own) | Search every logged contact by date, staff, channel, topic, status, number, email, dealer ID or words; export to CSV. |
 | My report | Support staff | Their own totals, trend, topics and notes for any date range. |
 | Team report | Supervisor, Manager | Who has logged; team totals; ISSUE notes; one-click copy of the WhatsApp DAILY REPORT. |
 | Dashboard | Supervisor, Manager | Any date range, team or one staff member: totals vs previous period, daily chart by channel, topic ranking, channel mix, staff productivity, issue-note log. |
@@ -24,6 +25,12 @@ Sign-in uses **Microsoft 365 (Outlook) accounts**. Data and memo files are store
   - **Supervisors** can also correct anyone's entries, write team-report notes, and manage campaigns and memo files.
   - **Managers** can do all of that and also manage the team list, roles, topics and channels.
 - Removing someone from the list blocks their access straight away. Their past cases stay in the reports.
+
+### How the automatic totals work
+
+Every time a contact is logged, edited, moved to another day or deleted, a database trigger recounts that staff member's day: the total, the count per channel and the count per topic. The team report, the WhatsApp DAILY REPORT and the dashboard read those counts, so nobody has to tally anything by hand. Issue notes are kept separately and are never touched by the recount.
+
+Days logged before the CRM log existed keep their original totals until a contact is logged on that day.
 
 ## Files
 
@@ -91,6 +98,10 @@ Whichever you choose, its address must match the Site URL from step 3.
 ### 6. Add the team
 
 Sign in as the manager, open **Team & topics**, and add each person with the name used in the report, their Outlook email and their role. Share the site address with them. They click **Sign in with Microsoft** and land on the right view for their role.
+
+### Updating an existing setup
+
+If you already ran `supabase/schema.sql` before the CRM log was added, run the whole file again in the SQL Editor. It's safe to re-run. It adds the `crm_logs` table, its access rules and the automatic-total trigger, and it switches the channels to Call, WhatsApp, Facebook, Email and Walk-in. Your existing team, cases, notes and campaigns are kept.
 
 ## Troubleshooting
 
